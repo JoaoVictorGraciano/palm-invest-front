@@ -6,12 +6,22 @@ export function formatCurrency(value: number, locale = 'pt-BR', currency = 'BRL'
   return new Intl.NumberFormat(locale, { style: 'currency', currency }).format(value);
 }
 
-export function formatPercentage(value: number, locale = 'pt-BR'): string {
+/**
+ * Formata um percentual (valor em escala 0-100, ex: 12.5 -> "12,50%").
+ * `signDisplay: 'exceptZero'` (padrão) é ideal para variações/lucros
+ * ("+12,50%" / "-4,00%"); use `'never'` para proporções puras (ex: fatia de
+ * um gráfico de distribuição), onde um "+" não faz sentido.
+ */
+export function formatPercentage(
+  value: number,
+  locale = 'pt-BR',
+  signDisplay: Intl.NumberFormatOptions['signDisplay'] = 'exceptZero',
+): string {
   return new Intl.NumberFormat(locale, {
     style: 'percent',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-    signDisplay: 'exceptZero',
+    signDisplay,
   }).format(value / 100);
 }
 
