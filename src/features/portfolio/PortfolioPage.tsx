@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { AssetClassFilter } from '@/features/portfolio/components/AssetClassFilter';
 import { AssetTable } from '@/features/portfolio/components/AssetTable';
+import { ContributionDialog } from '@/features/portfolio/components/ContributionDialog';
 import { PortfolioSkeleton } from '@/features/portfolio/components/PortfolioSkeleton';
 import { PortfolioSummaryCards } from '@/features/portfolio/components/PortfolioSummaryCards';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
@@ -19,12 +20,15 @@ export function PortfolioPage() {
 
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-16">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-semibold tracking-tight">{portfolio?.name ?? 'Minha Carteira'}</h1>
-        <p className="text-muted-foreground">
-          Acompanhe a performance consolidada dos seus ativos.
-          {isFetching && !isLoading && ' Atualizando cotações…'}
-        </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-semibold tracking-tight">{portfolio?.name ?? 'Minha Carteira'}</h1>
+          <p className="text-muted-foreground">
+            Acompanhe a performance consolidada dos seus ativos.
+            {isFetching && !isLoading && ' Atualizando cotações…'}
+          </p>
+        </div>
+        <ContributionDialog />
       </div>
 
       {isLoading && <PortfolioSkeleton />}

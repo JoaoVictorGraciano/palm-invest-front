@@ -1,0 +1,137 @@
+import { useEffect } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useAddTransaction } from '@/features/portfolio/hooks/useAddTransaction';
+import { ASSET_CLASS } from '@/types';
+
+const contributionFormSchema = z.object({
+  ticker: z
+    .string()
+    .trim()
+    .min(1, 'Informe o ticker do ativo.')
+    .max(15, 'Use no máximo 15 caracteres.')
+    .regex(/^[A-Za-z0-9]+$/, 'Use apenas letras e números (ex: PETR4, BTC).'),
+  assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
+  quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
+  pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
+});
+
+type ContributionFormInput = z.input<typeof contributionFormSchema>;
+type ContributionFormOutput = z.output<typeof contributionFormSchema>;
+
+interface ContributionFormProps {
+  /** Chamado após o aporte ser salvo com sucesso (ex: fechar o Dialog). */
+  onSuccess: () => void;
+  /** Notifica o pai sobre o estado de envio, para controlar o botão no rodapé do Dialog. */
+  onPendingChange?: (isPending: boolean) => void;
+  formId: string;
+}
+
+export function ContributionForm({ onSuccess, onPendingChange, formId }: ContributionFormProps) {
+  const { mutate, isPending } = useAddTransaction();
+
+  useEffect(() => {
+    onPendingChange?.(isPending);
+  }, [isPending, onPendingChange]);
+
+  const form = useForm<ContributionFormInput, unknown, ContributionFormOutput>({
+    resolver: zodResolver(contributionFormSchema),
+    defaultValues: {
+      ticker: '',
+      assetClass: ASSET_CLASS.STOCK,
+      quantity: undefined as unknown as number,
+      pricePaid: undefined as unknown as number,
+    },
+  });
+
+  function onSubmit(values: ContributionFormOutput) {
+    mutate(
+      {
+        ticker: values.ticker,
+        assetClass: values.assetClass,
+        quantity: values.quantity,
+        pricePaid: values.pricePaid,
+      },
+      { onSuccess: () => onSuccess() },
+    );
+  }
+
+  return (
+    <form id={formId} onSubmit={form.handleSubmit(onSubmit)} noValidate>
+      <FieldGroup>
+        <Field data-invalid={!!form.formState.errors.ticker}>
+          <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
+          <FieldContent>
+            <Input
+              id="ticker"
+              placeholder="Ex: PETR4, BTC"
+              autoComplete="off"
+              autoCapitalize="characters"
+              aria-invalid={!!form.formState.errors.ticker}
+              {...form.register('ticker')}
+            />
+            <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
+          </FieldContent>
+        </Field>
+
+        <Field data-invalid={!!form.formState.errors.assetClass}>
+          <FieldLabel htmlFor="assetClass">Classe do ativo</FieldLabel>
+          <FieldContent>
+            <Controller
+              control={form.control}
+              name="assetClass"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}>
+                    <SelectValue placeholder="Selecione a classe" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
+                    <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+            <FieldError errors={form.formState.errors.assetClass ? [form.formState.errors.assetClass] : undefined} />
+          </FieldContent>
+        </Field>
+
+        <Field data-invalid={!!form.formState.errors.quantity}>
+          <FieldLabel htmlFor="quantity">Quantidade comprada</FieldLabel>
+          <FieldContent>
+            <Input
+              id="quantity"
+              type="number"
+              step="any"
+              min="0"
+              placeholder="Ex: 100"
+              aria-invalid={!!form.formState.errors.quantity}
+              {...form.register('quantity')}
+            />
+            <FieldError errors={form.formState.errors.quantity ? [form.formState.errors.quantity] : undefined} />
+          </FieldContent>
+        </Field>
+
+        <Field data-invalid={!!form.formState.errors.pricePaid}>
+          <FieldLabel htmlFor="pricePaid">Preço pago (por unidade)</FieldLabel>
+          <FieldContent>
+            <Input
+              id="pricePaid"
+              type="number"
+              step="any"
+              min="0"
+              placeholder="Ex: 32.50"
+              aria-invalid={!!form.formState.errors.pricePaid}
+              {...form.register('pricePaid')}
+            />
+            <FieldError errors={form.formState.errors.pricePaid ? [form.formState.errors.pricePaid] : undefined} />
+          </FieldContent>
+        </Field>
+      </FieldGroup>
+    </form>
+  );
+}
