@@ -23,15 +23,15 @@ export function ContributionDialog() {
       <DialogTrigger asChild>
         <Button variant="outline">
           <PlusIcon />
-          Novo aporte
+          Nova transação
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Registrar aporte</DialogTitle>
+          <DialogTitle>Registrar transação</DialogTitle>
           <DialogDescription>
-            Informe os dados da compra. Se o ticker já existir na carteira, o custo médio é
-            recalculado automaticamente.
+            Compras aumentam a posição e recalculam o custo médio; vendas reduzem a quantidade em
+            estoque. Se o ticker ainda não existir na carteira, ele é criado automaticamente.
           </DialogDescription>
         </DialogHeader>
 
@@ -43,7 +43,7 @@ export function ContributionDialog() {
 
         <DialogFooter>
           <Button type="submit" form={FORM_ID} disabled={isPending}>
-            {isPending ? 'Salvando…' : 'Registrar aporte'}
+            {isPending ? 'Salvando…' : 'Registrar transação'}
           </Button>
         </DialogFooter>
       </DialogContent>

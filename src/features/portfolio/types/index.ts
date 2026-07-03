@@ -16,30 +16,39 @@ export type StockHolding = Omit<Stock, 'currentPrice' | 'currency' | 'updatedAt'
 export type CryptoHolding = Omit<Crypto, 'currentPrice' | 'currency' | 'updatedAt' | keyof AssetProfit>;
 export type AssetHolding = StockHolding | CryptoHolding;
 
+/** Natureza de uma transação: compra (aumenta o estoque) ou venda (reduz o estoque). */
+export const TRANSACTION_TYPE = {
+  BUY: 'BUY',
+  SELL: 'SELL',
+} as const;
+export type TransactionType = (typeof TRANSACTION_TYPE)[keyof typeof TRANSACTION_TYPE];
+
 /**
- * Um aporte (compra) registrado pelo usuário. É o dado "de verdade" que
- * persiste no localStorage — os `AssetHolding` são derivados agregando as
- * transações do mesmo ticker (soma de quantidade + custo médio ponderado).
- * Guardar o histórico de transações (em vez de só a posição final) permite
- * recalcular o custo médio corretamente a cada novo aporte.
+ * Uma transação (compra ou venda) registrada pelo usuário. É o dado "de
+ * verdade" que persiste no localStorage — os `AssetHolding` são derivados
+ * processando o histórico de transações do mesmo ticker em ordem
+ * cronológica: compras recalculam o custo médio ponderado, vendas apenas
+ * reduzem a quantidade em estoque (o custo médio não muda em uma venda).
  */
 export interface Transaction {
   id: string;
   ticker: string;
   name: string;
   assetClass: AssetClass;
-  /** Quantidade comprada nesta transação. */
+  type: TransactionType;
+  /** Quantidade comprada ou vendida nesta transação. */
   quantity: number;
-  /** Preço pago por unidade nesta transação. */
+  /** Preço por unidade nesta transação (pago na compra, recebido na venda). */
   pricePaid: number;
-  /** Data/hora do aporte (ISO 8601). */
+  /** Data/hora da transação (ISO 8601). */
   purchasedAt: string;
 }
 
-/** Dados de entrada para registrar um novo aporte (o formulário coleta estes campos). */
+/** Dados de entrada para registrar uma nova transação (o formulário coleta estes campos). */
 export interface NewTransactionInput {
   ticker: string;
   assetClass: AssetClass;
+  type: TransactionType;
   quantity: number;
   pricePaid: number;
 }

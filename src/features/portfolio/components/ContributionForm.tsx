@@ -4,11 +4,15 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAddTransaction } from '@/features/portfolio/hooks/useAddTransaction';
+import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import { ASSET_CLASS } from '@/types';
 
 const contributionFormSchema = z.object({
+  type: z.enum([TRANSACTION_TYPE.BUY, TRANSACTION_TYPE.SELL]),
   ticker: z
     .string()
     .trim()
@@ -24,7 +28,7 @@ type ContributionFormInput = z.input<typeof contributionFormSchema>;
 type ContributionFormOutput = z.output<typeof contributionFormSchema>;
 
 interface ContributionFormProps {
-  /** Chamado após o aporte ser salvo com sucesso (ex: fechar o Dialog). */
+  /** Chamado após a transação ser salva com sucesso (ex: fechar o Dialog). */
   onSuccess: () => void;
   /** Notifica o pai sobre o estado de envio, para controlar o botão no rodapé do Dialog. */
   onPendingChange?: (isPending: boolean) => void;
@@ -41,6 +45,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
   const form = useForm<ContributionFormInput, unknown, ContributionFormOutput>({
     resolver: zodResolver(contributionFormSchema),
     defaultValues: {
+      type: TRANSACTION_TYPE.BUY,
       ticker: '',
       assetClass: ASSET_CLASS.STOCK,
       quantity: undefined as unknown as number,
@@ -48,11 +53,15 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
     },
   });
 
+  const transactionType = form.watch('type');
+  const isSell = transactionType === TRANSACTION_TYPE.SELL;
+
   function onSubmit(values: ContributionFormOutput) {
     mutate(
       {
         ticker: values.ticker,
         assetClass: values.assetClass,
+        type: values.type,
         quantity: values.quantity,
         pricePaid: values.pricePaid,
       },
@@ -63,6 +72,39 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
   return (
     <form id={formId} onSubmit={form.handleSubmit(onSubmit)} noValidate>
       <FieldGroup>
+        <Field data-invalid={!!form.formState.errors.type}>
+          <FieldLabel>Tipo de transação</FieldLabel>
+          <FieldContent>
+            <Controller
+              control={form.control}
+              name="type"
+              render={({ field }) => (
+                <RadioGroup
+                  className="grid-cols-2"
+                  value={field.value}
+                  onValueChange={field.onChange}
+                >
+                  <Label
+                    htmlFor="type-buy"
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5"
+                  >
+                    <RadioGroupItem value={TRANSACTION_TYPE.BUY} id="type-buy" />
+                    Compra
+                  </Label>
+                  <Label
+                    htmlFor="type-sell"
+                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5"
+                  >
+                    <RadioGroupItem value={TRANSACTION_TYPE.SELL} id="type-sell" />
+                    Venda
+                  </Label>
+                </RadioGroup>
+              )}
+            />
+            <FieldError errors={form.formState.errors.type ? [form.formState.errors.type] : undefined} />
+          </FieldContent>
+        </Field>
+
         <Field data-invalid={!!form.formState.errors.ticker}>
           <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
           <FieldContent>
@@ -101,7 +143,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         </Field>
 
         <Field data-invalid={!!form.formState.errors.quantity}>
-          <FieldLabel htmlFor="quantity">Quantidade comprada</FieldLabel>
+          <FieldLabel htmlFor="quantity">{isSell ? 'Quantidade vendida' : 'Quantidade comprada'}</FieldLabel>
           <FieldContent>
             <Input
               id="quantity"
@@ -117,7 +159,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         </Field>
 
         <Field data-invalid={!!form.formState.errors.pricePaid}>
-          <FieldLabel htmlFor="pricePaid">Preço pago (por unidade)</FieldLabel>
+          <FieldLabel htmlFor="pricePaid">{isSell ? 'Preço de venda (por unidade)' : 'Preço pago (por unidade)'}</FieldLabel>
           <FieldContent>
             <Input
               id="pricePaid"

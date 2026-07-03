@@ -2,6 +2,7 @@ import { isStock } from '@/types';
 import type { Asset } from '@/types';
 import { cn } from '@/lib/utils';
 import { formatCurrency, formatPercentage } from '@/utils';
+import { DeleteAssetButton } from '@/features/portfolio/components/DeleteAssetButton';
 
 interface AssetTableProps {
   assets: Asset[];
@@ -28,6 +29,7 @@ export function AssetTable({ assets }: AssetTableProps) {
             <th className="px-4 py-3 text-right font-medium">Cotação atual</th>
             <th className="px-4 py-3 text-right font-medium">Valor atual</th>
             <th className="px-4 py-3 text-right font-medium">Lucro/Prejuízo</th>
+            <th className="px-4 py-3 text-right font-medium">Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -61,6 +63,9 @@ export function AssetTable({ assets }: AssetTableProps) {
                 <td className={cn('px-4 py-3 text-right font-medium', profitColor)}>
                   {formatCurrency(asset.profit, 'pt-BR', asset.currency)}
                   <span className="ml-1 text-xs">({formatPercentage(asset.profitPercentage)})</span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <DeleteAssetButton ticker={asset.ticker} />
                 </td>
               </tr>
             );
