@@ -4,8 +4,8 @@ import { deleteAssetTransactions } from '@/features/portfolio/services/transacti
 
 /**
  * Remove definitivamente um ativo da carteira (todas as suas transações) e
- * invalida a query `['portfolio']` para que o Dashboard e a tabela reflitam
- * a remoção imediatamente.
+ * invalida as queries `['portfolio']` e `['transactions']` para que o
+ * Dashboard, a tabela e o extrato reflitam a remoção imediatamente.
  */
 export function useDeleteAsset() {
   const queryClient = useQueryClient();
@@ -16,7 +16,10 @@ export function useDeleteAsset() {
       return ticker;
     },
     onSuccess: async (ticker) => {
-      await queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
+        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+      ]);
       toast.success('Ativo removido', {
         description: `${ticker} foi removido da carteira.`,
       });

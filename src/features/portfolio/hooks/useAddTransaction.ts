@@ -17,14 +17,16 @@ export function useAddTransaction() {
   return useMutation({
     mutationFn: async (input: NewTransactionInput) => addTransaction(input),
     onSuccess: async (transaction) => {
-      await queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['portfolio'] }),
+        queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+      ]);
       const action = transaction.type === TRANSACTION_TYPE.SELL ? 'Venda registrada' : 'Compra registrada';
       toast.success(action, {
         description: `${transaction.quantity} ${transaction.ticker} a ${formatCurrency(transaction.pricePaid)} por unidade.`,
       });
     },
     onError: (error) => {
-      console.error('[useAddTransaction] onError fired', error);
       if (error instanceof InsufficientQuantityError) {
         toast.error('Quantidade insuficiente para venda', {
           description:

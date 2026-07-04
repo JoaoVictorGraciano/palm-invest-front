@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { HomePage } from '@/features/home/HomePage';
+import { HistoryPage } from '@/features/portfolio/HistoryPage';
 import { PortfolioPage } from '@/features/portfolio/PortfolioPage';
 
 export const router = createBrowserRouter([
@@ -15,6 +16,10 @@ export const router = createBrowserRouter([
       {
         path: 'carteira',
         element: <PortfolioPage />,
+      },
+      {
+        path: 'historico',
+        element: <HistoryPage />,
       },
     ],
   },
