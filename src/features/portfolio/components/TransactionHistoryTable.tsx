@@ -25,17 +25,25 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
             <TableHead>Data</TableHead>
             <TableHead>Tipo</TableHead>
             <TableHead>Ativo</TableHead>
+            <TableHead>Corretora</TableHead> {/* 🚀 NOVA COLUNA */}
             <TableHead className="text-right">Quantidade</TableHead>
             <TableHead className="text-right">Preço unitário</TableHead>
+            <TableHead className="text-right">Taxas</TableHead> {/* 🚀 NOVA COLUNA */}
             <TableHead className="text-right">Valor total</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {transactions.map((transaction) => {
-            // Transações salvas antes da distinção compra/venda existir não têm `type` —
-            // tratamos como compra, igual à lógica de agregação em `getHoldingsFromTransactions`.
             const isSell = transaction.type === TRANSACTION_TYPE.SELL;
-            const totalValue = transaction.quantity * transaction.pricePaid;
+            
+            // Usamos "as any" temporariamente para o TypeScript não reclamar das variáveis novas
+            const brokerName = (transaction as any).broker || '-';
+            const feeValue = Number((transaction as any).fee || 0);
+            
+            // Matemática financeira real: 
+            // Na compra, a taxa aumenta seu custo. Na venda, a taxa diminui seu resgate.
+            const baseValue = transaction.quantity * transaction.pricePaid;
+            const totalValue = isSell ? baseValue - feeValue : baseValue + feeValue;
 
             return (
               <TableRow key={transaction.id}>
@@ -47,8 +55,15 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
                   <div className="font-medium">{transaction.ticker}</div>
                   <div className="text-xs text-muted-foreground">{transaction.name}</div>
                 </TableCell>
+                {/* 🚀 CELULAS NOVAS */}
+                <TableCell className="text-muted-foreground">{brokerName}</TableCell>
+                
                 <TableCell className="text-right">{transaction.quantity}</TableCell>
                 <TableCell className="text-right">{formatCurrency(transaction.pricePaid)}</TableCell>
+                
+                {/* 🚀 TAXA */}
+                <TableCell className="text-right text-muted-foreground">{formatCurrency(feeValue)}</TableCell>
+                
                 <TableCell className="text-right font-medium">{formatCurrency(totalValue)}</TableCell>
               </TableRow>
             );

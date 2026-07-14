@@ -25,7 +25,9 @@ export function useTransactionHistory() {
         assetClass: 'STOCK',         // Forçando para Ação por enquanto
         quantity: Number(t.quantity),
         pricePaid: Number(t.price),  // A tabela lê pricePaid
-        purchasedAt: t.transactionDate // Aqui a data mapeada pro ordenamento funcionar!
+        purchasedAt: t.transactionDate, // Aqui a data mapeada pro ordenamento funcionar!
+        broker: t.broker || '-',     // Puxa a corretora (se for nulo, põe um tracinho)
+        fee: Number(t.fee || 0)      // Puxa a taxa garantindo que é um número
       }));
     },
   });
