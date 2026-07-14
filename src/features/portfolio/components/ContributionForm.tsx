@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAddTransaction } from '@/features/portfolio/hooks/useAddTransaction';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import { ASSET_CLASS } from '@/types';
 
@@ -28,15 +27,14 @@ type ContributionFormInput = z.input<typeof contributionFormSchema>;
 type ContributionFormOutput = z.output<typeof contributionFormSchema>;
 
 interface ContributionFormProps {
-  /** Chamado após a transação ser salva com sucesso (ex: fechar o Dialog). */
   onSuccess: () => void;
-  /** Notifica o pai sobre o estado de envio, para controlar o botão no rodapé do Dialog. */
   onPendingChange?: (isPending: boolean) => void;
   formId: string;
 }
 
 export function ContributionForm({ onSuccess, onPendingChange, formId }: ContributionFormProps) {
-  const { mutate, isPending } = useAddTransaction();
+  // 🚀 Criamos um estado manual para saber se está carregando
+  const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     onPendingChange?.(isPending);
@@ -56,17 +54,37 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
   const transactionType = form.watch('type');
   const isSell = transactionType === TRANSACTION_TYPE.SELL;
 
-  function onSubmit(values: ContributionFormOutput) {
-    mutate(
-      {
-        ticker: values.ticker,
-        assetClass: values.assetClass,
-        type: values.type,
-        quantity: values.quantity,
-        pricePaid: values.pricePaid,
-      },
-      { onSuccess: () => onSuccess() },
-    );
+  // 🚀 AQUI É ONDE A MÁGICA ACONTECE!
+  async function onSubmit(values: ContributionFormOutput) {
+    setIsPending(true);
+    try {
+      const response = await fetch("http://localhost:8080/api/transactions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: values.type,
+          assetSymbol: values.ticker.toUpperCase(), 
+          quantity: values.quantity,
+          price: values.pricePaid,
+          transactionDate: new Date().toISOString() // 🚀 FALTAVA ISSO: A data atual!
+        }),
+      });
+
+      if (response.ok) {
+        alert("Transação salva com sucesso no banco de dados!");
+        onSuccess(); // Isso fecha a janelinha modal bonitinha
+        window.location.reload(); // Isso dá o F5 automático na página
+      } else {
+        alert("Erro ao salvar! Verifique se o Back-End está rodando.");
+      }
+    } catch (error) {
+      console.error("Erro:", error);
+      alert("Falha de conexão. O Spring Boot está ligado?");
+    } finally {
+      setIsPending(false);
+    }
   }
 
   return (

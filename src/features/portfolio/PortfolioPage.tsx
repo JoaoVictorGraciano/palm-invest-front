@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { AssetClassFilter } from '@/features/portfolio/components/AssetClassFilter';
 import { AssetTable } from '@/features/portfolio/components/AssetTable';
+import { ContributionDialog } from '@/features/portfolio/components/ContributionDialog';
 import { PortfolioSkeleton } from '@/features/portfolio/components/PortfolioSkeleton';
 import { PortfolioSummaryCards } from '@/features/portfolio/components/PortfolioSummaryCards';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
 import type { AssetFilter } from '@/features/portfolio/types';
-import { TransactionForm } from './components/TransactionForm';
 
 export function PortfolioPage() {
   const { portfolio, isLoading, isError, isFetching, refetch } = usePortfolio();
@@ -28,7 +28,8 @@ export function PortfolioPage() {
             {isFetching && !isLoading && ' Atualizando cotações…'}
           </p>
         </div>
-       
+        {/* O BOTÃO ELEGANTE VOLTOU AQUI! */}
+        <ContributionDialog />
       </div>
 
       {isLoading && <PortfolioSkeleton />}
@@ -45,8 +46,6 @@ export function PortfolioPage() {
       {portfolio && !isLoading && (
         <>
           <PortfolioSummaryCards portfolio={portfolio} />
-
-          <TransactionForm />
           
           <div className="flex flex-col gap-4">
             <AssetClassFilter value={filter} onChange={setFilter} />
