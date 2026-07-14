@@ -10,8 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import { ASSET_CLASS } from '@/types';
 
+// 1. Atualizamos as regras para aceitar os campos novos
 const contributionFormSchema = z.object({
   type: z.enum([TRANSACTION_TYPE.BUY, TRANSACTION_TYPE.SELL]),
+  transactionDate: z.string().min(1, 'Informe a data.'),
   ticker: z
     .string()
     .trim()
@@ -21,6 +23,8 @@ const contributionFormSchema = z.object({
   assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
+  broker: z.string().trim().min(1, 'Informe a corretora (Ex: Clear, XP, Rico).'),
+  fee: z.coerce.number().min(0, 'A taxa não pode ser negativa.'),
 });
 
 type ContributionFormInput = z.input<typeof contributionFormSchema>;
@@ -33,7 +37,6 @@ interface ContributionFormProps {
 }
 
 export function ContributionForm({ onSuccess, onPendingChange, formId }: ContributionFormProps) {
-  // 🚀 Criamos um estado manual para saber se está carregando
   const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
@@ -44,17 +47,20 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
     resolver: zodResolver(contributionFormSchema),
     defaultValues: {
       type: TRANSACTION_TYPE.BUY,
+      // Pega a data de hoje e deixa no formato YYYY-MM-DD para o input de calendário
+      transactionDate: new Date().toISOString().split('T')[0],
       ticker: '',
       assetClass: ASSET_CLASS.STOCK,
       quantity: undefined as unknown as number,
       pricePaid: undefined as unknown as number,
+      broker: '',
+      fee: 0, // Taxa começa zerada por padrão
     },
   });
 
   const transactionType = form.watch('type');
   const isSell = transactionType === TRANSACTION_TYPE.SELL;
 
-  // 🚀 AQUI É ONDE A MÁGICA ACONTECE!
   async function onSubmit(values: ContributionFormOutput) {
     setIsPending(true);
     try {
@@ -65,17 +71,21 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         },
         body: JSON.stringify({
           type: values.type,
-          assetSymbol: values.ticker.toUpperCase(), 
+          assetSymbol: values.ticker.toUpperCase(),
           quantity: values.quantity,
           price: values.pricePaid,
-          transactionDate: new Date().toISOString() // 🚀 FALTAVA ISSO: A data atual!
+          // Mandamos os dados novos pro Spring Boot!
+          broker: values.broker,
+          fee: values.fee,
+          // O Java espera LocalDateTime, então adicionamos uma hora fictícia (meio-dia) para não dar erro de fuso
+          transactionDate: `${values.transactionDate}T12:00:00` 
         }),
       });
 
       if (response.ok) {
         alert("Transação salva com sucesso no banco de dados!");
-        onSuccess(); // Isso fecha a janelinha modal bonitinha
-        window.location.reload(); // Isso dá o F5 automático na página
+        onSuccess(); 
+        window.location.reload(); 
       } else {
         alert("Erro ao salvar! Verifique se o Back-End está rodando.");
       }
@@ -90,6 +100,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
   return (
     <form id={formId} onSubmit={form.handleSubmit(onSubmit)} noValidate>
       <FieldGroup>
+        {/* TIPO DE TRANSAÇÃO */}
         <Field data-invalid={!!form.formState.errors.type}>
           <FieldLabel>Tipo de transação</FieldLabel>
           <FieldContent>
@@ -97,22 +108,12 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
               control={form.control}
               name="type"
               render={({ field }) => (
-                <RadioGroup
-                  className="grid-cols-2"
-                  value={field.value}
-                  onValueChange={field.onChange}
-                >
-                  <Label
-                    htmlFor="type-buy"
-                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5"
-                  >
+                <RadioGroup className="grid-cols-2" value={field.value} onValueChange={field.onChange}>
+                  <Label htmlFor="type-buy" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
                     <RadioGroupItem value={TRANSACTION_TYPE.BUY} id="type-buy" />
                     Compra
                   </Label>
-                  <Label
-                    htmlFor="type-sell"
-                    className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5"
-                  >
+                  <Label htmlFor="type-sell" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
                     <RadioGroupItem value={TRANSACTION_TYPE.SELL} id="type-sell" />
                     Venda
                   </Label>
@@ -123,74 +124,104 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </FieldContent>
         </Field>
 
-        <Field data-invalid={!!form.formState.errors.ticker}>
-          <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
+        {/* 🚀 NOVO CAMPO: DATA */}
+        <Field data-invalid={!!form.formState.errors.transactionDate}>
+          <FieldLabel htmlFor="transactionDate">Data da Transação</FieldLabel>
           <FieldContent>
             <Input
-              id="ticker"
-              placeholder="Ex: PETR4, BTC"
+              id="transactionDate"
+              type="date"
+              aria-invalid={!!form.formState.errors.transactionDate}
+              {...form.register('transactionDate')}
+            />
+            <FieldError errors={form.formState.errors.transactionDate ? [form.formState.errors.transactionDate] : undefined} />
+          </FieldContent>
+        </Field>
+
+        {/* ATIVO E CLASSE (Lado a Lado) */}
+        <div className="grid grid-cols-2 gap-4">
+          <Field data-invalid={!!form.formState.errors.ticker}>
+            <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
+            <FieldContent>
+              <Input id="ticker" placeholder="Ex: PETR4" autoComplete="off" autoCapitalize="characters" aria-invalid={!!form.formState.errors.ticker} {...form.register('ticker')} />
+              <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
+            </FieldContent>
+          </Field>
+
+          <Field data-invalid={!!form.formState.errors.assetClass}>
+            <FieldLabel htmlFor="assetClass">Classe</FieldLabel>
+            <FieldContent>
+              <Controller
+                control={form.control}
+                name="assetClass"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}>
+                      <SelectValue placeholder="Classe" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
+                      <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              <FieldError errors={form.formState.errors.assetClass ? [form.formState.errors.assetClass] : undefined} />
+            </FieldContent>
+          </Field>
+        </div>
+
+        {/* 🚀 NOVO CAMPO: CORRETORA */}
+        <Field data-invalid={!!form.formState.errors.broker}>
+          <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>
+          <FieldContent>
+            <Input
+              id="broker"
+              placeholder="Ex: Clear, NuInvest, Binance..."
               autoComplete="off"
-              autoCapitalize="characters"
-              aria-invalid={!!form.formState.errors.ticker}
-              {...form.register('ticker')}
+              aria-invalid={!!form.formState.errors.broker}
+              {...form.register('broker')}
             />
-            <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
+            <FieldError errors={form.formState.errors.broker ? [form.formState.errors.broker] : undefined} />
           </FieldContent>
         </Field>
 
-        <Field data-invalid={!!form.formState.errors.assetClass}>
-          <FieldLabel htmlFor="assetClass">Classe do ativo</FieldLabel>
-          <FieldContent>
-            <Controller
-              control={form.control}
-              name="assetClass"
-              render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}>
-                    <SelectValue placeholder="Selecione a classe" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
-                    <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
-                  </SelectContent>
-                </Select>
-              )}
-            />
-            <FieldError errors={form.formState.errors.assetClass ? [form.formState.errors.assetClass] : undefined} />
-          </FieldContent>
-        </Field>
+        {/* QUANTIDADE E PREÇO */}
+        <div className="grid grid-cols-2 gap-4">
+          <Field data-invalid={!!form.formState.errors.quantity}>
+            <FieldLabel htmlFor="quantity">{isSell ? 'Qtd vendida' : 'Qtd comprada'}</FieldLabel>
+            <FieldContent>
+              <Input id="quantity" type="number" step="any" min="0" placeholder="Ex: 100" aria-invalid={!!form.formState.errors.quantity} {...form.register('quantity')} />
+              <FieldError errors={form.formState.errors.quantity ? [form.formState.errors.quantity] : undefined} />
+            </FieldContent>
+          </Field>
 
-        <Field data-invalid={!!form.formState.errors.quantity}>
-          <FieldLabel htmlFor="quantity">{isSell ? 'Quantidade vendida' : 'Quantidade comprada'}</FieldLabel>
+          <Field data-invalid={!!form.formState.errors.pricePaid}>
+            <FieldLabel htmlFor="pricePaid">{isSell ? 'Preço (venda)' : 'Preço (compra)'}</FieldLabel>
+            <FieldContent>
+              <Input id="pricePaid" type="number" step="any" min="0" placeholder="Ex: 32.50" aria-invalid={!!form.formState.errors.pricePaid} {...form.register('pricePaid')} />
+              <FieldError errors={form.formState.errors.pricePaid ? [form.formState.errors.pricePaid] : undefined} />
+            </FieldContent>
+          </Field>
+        </div>
+
+        {/* 🚀 NOVO CAMPO: TAXA */}
+        <Field data-invalid={!!form.formState.errors.fee}>
+          <FieldLabel htmlFor="fee">Taxas e Custos (R$)</FieldLabel>
           <FieldContent>
             <Input
-              id="quantity"
+              id="fee"
               type="number"
               step="any"
               min="0"
-              placeholder="Ex: 100"
-              aria-invalid={!!form.formState.errors.quantity}
-              {...form.register('quantity')}
+              placeholder="Ex: 2.50"
+              aria-invalid={!!form.formState.errors.fee}
+              {...form.register('fee')}
             />
-            <FieldError errors={form.formState.errors.quantity ? [form.formState.errors.quantity] : undefined} />
+            <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
           </FieldContent>
         </Field>
 
-        <Field data-invalid={!!form.formState.errors.pricePaid}>
-          <FieldLabel htmlFor="pricePaid">{isSell ? 'Preço de venda (por unidade)' : 'Preço pago (por unidade)'}</FieldLabel>
-          <FieldContent>
-            <Input
-              id="pricePaid"
-              type="number"
-              step="any"
-              min="0"
-              placeholder="Ex: 32.50"
-              aria-invalid={!!form.formState.errors.pricePaid}
-              {...form.register('pricePaid')}
-            />
-            <FieldError errors={form.formState.errors.pricePaid ? [form.formState.errors.pricePaid] : undefined} />
-          </FieldContent>
-        </Field>
       </FieldGroup>
     </form>
   );
