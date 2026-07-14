@@ -7,6 +7,7 @@ import { PortfolioSkeleton } from '@/features/portfolio/components/PortfolioSkel
 import { PortfolioSummaryCards } from '@/features/portfolio/components/PortfolioSummaryCards';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
 import type { AssetFilter } from '@/features/portfolio/types';
+import { TransactionForm } from './components/TransactionForm';
 
 export function PortfolioPage() {
   const { portfolio, isLoading, isError, isFetching, refetch } = usePortfolio();
@@ -46,6 +47,8 @@ export function PortfolioPage() {
         <>
           <PortfolioSummaryCards portfolio={portfolio} />
 
+          <TransactionForm />
+          
           <div className="flex flex-col gap-4">
             <AssetClassFilter value={filter} onChange={setFilter} />
             <AssetTable assets={filteredAssets} />
