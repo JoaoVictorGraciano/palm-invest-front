@@ -30,6 +30,7 @@ export function TransactionForm() {
       if (response.ok) {
         alert("Transação salva com sucesso no Banco de Dados!");
         setFormData({ ...formData, assetSymbol: "", quantity: "", price: "" });
+        window.location.reload(); // 🚀 CORREÇÃO: Força a página a atualizar e buscar os novos dados!
       } else {
         alert("Erro ao salvar transação.");
       }

@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { AssetClassFilter } from '@/features/portfolio/components/AssetClassFilter';
 import { AssetTable } from '@/features/portfolio/components/AssetTable';
-import { ContributionDialog } from '@/features/portfolio/components/ContributionDialog';
 import { PortfolioSkeleton } from '@/features/portfolio/components/PortfolioSkeleton';
 import { PortfolioSummaryCards } from '@/features/portfolio/components/PortfolioSummaryCards';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
@@ -29,7 +28,7 @@ export function PortfolioPage() {
             {isFetching && !isLoading && ' Atualizando cotações…'}
           </p>
         </div>
-        <ContributionDialog />
+       
       </div>
 
       {isLoading && <PortfolioSkeleton />}

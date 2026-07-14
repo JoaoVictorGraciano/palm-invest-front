@@ -45,9 +45,10 @@ export async function getPortfolioHoldings(): Promise<AssetHolding[]> {
       id: t.id.toString(),
       type: t.type,           // 'BUY' ou 'SELL'
       ticker: t.assetSymbol,  // O Java chama de assetSymbol, o Front chama de ticker
-      quantity: t.quantity,
-      price: t.price,
-      date: t.transactionDate 
+      quantity: Number(t.quantity), // <-- MUDOU AQUI: Converte para número
+      price: Number(t.price),       // <-- MUDOU AQUI: Converte para número
+      date: t.transactionDate,
+      assetClass: 'STOCK'           // <-- MUDOU AQUI: Avisa que é uma Ação! (Isso faz aparecer na tela)
     }));
 
     // 3. Manda para o calculador do Front-End fazer o preço médio
