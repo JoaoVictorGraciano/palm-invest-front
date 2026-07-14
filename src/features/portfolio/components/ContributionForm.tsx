@@ -24,6 +24,8 @@ const contributionFormSchema = z.object({
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
   broker: z.string().trim().min(1, 'Informe a corretora (Ex: Clear, XP, Rico).'),
   fee: z.coerce.number().min(0, 'A taxa não pode ser negativa.'),
+  // 🚀 NOVO CAMPO: Zod aceita como opcional
+  observation: z.string().optional(),
 });
 
 type ContributionFormInput = z.input<typeof contributionFormSchema>;
@@ -46,7 +48,6 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
     resolver: zodResolver(contributionFormSchema),
     defaultValues: {
       type: TRANSACTION_TYPE.BUY,
-      // 🚀 Pega a data e hora atual no fuso horário correto (YYYY-MM-DDTHH:mm)
       transactionDate: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
       ticker: '',
       assetClass: ASSET_CLASS.STOCK,
@@ -54,6 +55,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
       pricePaid: undefined as unknown as number,
       broker: '',
       fee: 0,
+      observation: '', // 🚀 Começa vazio
     },
   });
 
@@ -70,13 +72,15 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         },
         body: JSON.stringify({
           type: values.type,
+          // Reforço de segurança: garante o maiúsculo antes de ir pro Java
           assetSymbol: values.ticker.toUpperCase(),
           quantity: values.quantity,
           price: values.pricePaid,
           broker: values.broker,
           fee: values.fee,
-          // 🚀 Agora enviamos a data e hora exatas, só adicionando os segundos (:00) pro Java não reclamar
-          transactionDate: `${values.transactionDate}:00` 
+          transactionDate: `${values.transactionDate}:00`,
+          // 🚀 Manda a observação pro Java
+          observation: values.observation 
         }),
       });
 
@@ -121,16 +125,10 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </FieldContent>
         </Field>
 
-        {/* 🚀 TROCAMOS O TYPE PARA "datetime-local" */}
         <Field data-invalid={!!form.formState.errors.transactionDate}>
           <FieldLabel htmlFor="transactionDate">Data e Hora da Transação</FieldLabel>
           <FieldContent>
-            <Input
-              id="transactionDate"
-              type="datetime-local"
-              aria-invalid={!!form.formState.errors.transactionDate}
-              {...form.register('transactionDate')}
-            />
+            <Input id="transactionDate" type="datetime-local" aria-invalid={!!form.formState.errors.transactionDate} {...form.register('transactionDate')} />
             <FieldError errors={form.formState.errors.transactionDate ? [form.formState.errors.transactionDate] : undefined} />
           </FieldContent>
         </Field>
@@ -139,7 +137,19 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           <Field data-invalid={!!form.formState.errors.ticker}>
             <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
             <FieldContent>
-              <Input id="ticker" placeholder="Ex: PETR4" autoComplete="off" autoCapitalize="characters" aria-invalid={!!form.formState.errors.ticker} {...form.register('ticker')} />
+              {/* 🚀 LÓGICA DE MAIÚSCULO: className="uppercase" e onInput */}
+              <Input 
+                id="ticker" 
+                placeholder="Ex: PETR4" 
+                autoComplete="off" 
+                className="uppercase"
+                aria-invalid={!!form.formState.errors.ticker} 
+                {...form.register('ticker', {
+                  onChange: (e) => {
+                    e.target.value = e.target.value.toUpperCase();
+                  }
+                })} 
+              />
               <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
             </FieldContent>
           </Field>
@@ -200,6 +210,22 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
             <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
           </FieldContent>
         </Field>
+
+        {/* 🚀 NOVO CAMPO: OBSERVAÇÃO */}
+        <Field data-invalid={!!form.formState.errors.observation}>
+          <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>
+          <FieldContent>
+            <Input 
+              id="observation" 
+              placeholder="Ex: Aporte mensal, pagamento de dividendos..." 
+              autoComplete="off" 
+              aria-invalid={!!form.formState.errors.observation} 
+              {...form.register('observation')} 
+            />
+            <FieldError errors={form.formState.errors.observation ? [form.formState.errors.observation] : undefined} />
+          </FieldContent>
+        </Field>
+
       </FieldGroup>
     </form>
   );
