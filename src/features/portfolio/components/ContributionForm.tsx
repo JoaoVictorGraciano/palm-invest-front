@@ -10,10 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import { ASSET_CLASS } from '@/types';
 
-// 1. Atualizamos as regras para aceitar os campos novos
 const contributionFormSchema = z.object({
   type: z.enum([TRANSACTION_TYPE.BUY, TRANSACTION_TYPE.SELL]),
-  transactionDate: z.string().min(1, 'Informe a data.'),
+  transactionDate: z.string().min(1, 'Informe a data e hora.'),
   ticker: z
     .string()
     .trim()
@@ -47,14 +46,14 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
     resolver: zodResolver(contributionFormSchema),
     defaultValues: {
       type: TRANSACTION_TYPE.BUY,
-      // Pega a data de hoje e deixa no formato YYYY-MM-DD para o input de calendário
-      transactionDate: new Date().toISOString().split('T')[0],
+      // 🚀 Pega a data e hora atual no fuso horário correto (YYYY-MM-DDTHH:mm)
+      transactionDate: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
       ticker: '',
       assetClass: ASSET_CLASS.STOCK,
       quantity: undefined as unknown as number,
       pricePaid: undefined as unknown as number,
       broker: '',
-      fee: 0, // Taxa começa zerada por padrão
+      fee: 0,
     },
   });
 
@@ -74,11 +73,10 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           assetSymbol: values.ticker.toUpperCase(),
           quantity: values.quantity,
           price: values.pricePaid,
-          // Mandamos os dados novos pro Spring Boot!
           broker: values.broker,
           fee: values.fee,
-          // O Java espera LocalDateTime, então adicionamos uma hora fictícia (meio-dia) para não dar erro de fuso
-          transactionDate: `${values.transactionDate}T12:00:00` 
+          // 🚀 Agora enviamos a data e hora exatas, só adicionando os segundos (:00) pro Java não reclamar
+          transactionDate: `${values.transactionDate}:00` 
         }),
       });
 
@@ -100,7 +98,6 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
   return (
     <form id={formId} onSubmit={form.handleSubmit(onSubmit)} noValidate>
       <FieldGroup>
-        {/* TIPO DE TRANSAÇÃO */}
         <Field data-invalid={!!form.formState.errors.type}>
           <FieldLabel>Tipo de transação</FieldLabel>
           <FieldContent>
@@ -124,13 +121,13 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </FieldContent>
         </Field>
 
-        {/* 🚀 NOVO CAMPO: DATA */}
+        {/* 🚀 TROCAMOS O TYPE PARA "datetime-local" */}
         <Field data-invalid={!!form.formState.errors.transactionDate}>
-          <FieldLabel htmlFor="transactionDate">Data da Transação</FieldLabel>
+          <FieldLabel htmlFor="transactionDate">Data e Hora da Transação</FieldLabel>
           <FieldContent>
             <Input
               id="transactionDate"
-              type="date"
+              type="datetime-local"
               aria-invalid={!!form.formState.errors.transactionDate}
               {...form.register('transactionDate')}
             />
@@ -138,7 +135,6 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </FieldContent>
         </Field>
 
-        {/* ATIVO E CLASSE (Lado a Lado) */}
         <div className="grid grid-cols-2 gap-4">
           <Field data-invalid={!!form.formState.errors.ticker}>
             <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
@@ -171,22 +167,14 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </Field>
         </div>
 
-        {/* 🚀 NOVO CAMPO: CORRETORA */}
         <Field data-invalid={!!form.formState.errors.broker}>
           <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>
           <FieldContent>
-            <Input
-              id="broker"
-              placeholder="Ex: Clear, NuInvest, Binance..."
-              autoComplete="off"
-              aria-invalid={!!form.formState.errors.broker}
-              {...form.register('broker')}
-            />
+            <Input id="broker" placeholder="Ex: Clear, NuInvest, Binance..." autoComplete="off" aria-invalid={!!form.formState.errors.broker} {...form.register('broker')} />
             <FieldError errors={form.formState.errors.broker ? [form.formState.errors.broker] : undefined} />
           </FieldContent>
         </Field>
 
-        {/* QUANTIDADE E PREÇO */}
         <div className="grid grid-cols-2 gap-4">
           <Field data-invalid={!!form.formState.errors.quantity}>
             <FieldLabel htmlFor="quantity">{isSell ? 'Qtd vendida' : 'Qtd comprada'}</FieldLabel>
@@ -205,23 +193,13 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </Field>
         </div>
 
-        {/* 🚀 NOVO CAMPO: TAXA */}
         <Field data-invalid={!!form.formState.errors.fee}>
           <FieldLabel htmlFor="fee">Taxas e Custos (R$)</FieldLabel>
           <FieldContent>
-            <Input
-              id="fee"
-              type="number"
-              step="any"
-              min="0"
-              placeholder="Ex: 2.50"
-              aria-invalid={!!form.formState.errors.fee}
-              {...form.register('fee')}
-            />
+            <Input id="fee" type="number" step="any" min="0" placeholder="Ex: 2.50" aria-invalid={!!form.formState.errors.fee} {...form.register('fee')} />
             <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
           </FieldContent>
         </Field>
-
       </FieldGroup>
     </form>
   );
