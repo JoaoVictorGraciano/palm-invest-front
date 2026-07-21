@@ -13,12 +13,7 @@ import { ASSET_CLASS } from '@/types';
 const contributionFormSchema = z.object({
   type: z.enum([TRANSACTION_TYPE.BUY, TRANSACTION_TYPE.SELL]),
   transactionDate: z.string().min(1, 'Informe a data e hora.'),
-  ticker: z
-    .string()
-    .trim()
-    .min(1, 'Informe o ticker do ativo.')
-    .max(15, 'Use no máximo 15 caracteres.')
-    .regex(/^[A-Za-z0-9]+$/, 'Use apenas letras e números (ex: PETR4, BTC).'),
+  ticker: z.string().trim().min(1, 'Informe o ticker do ativo.').max(15, 'Use no máximo 15 caracteres.').regex(/^[A-Za-z0-9]+$/, 'Use apenas letras e números.'),
   assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
@@ -34,27 +29,33 @@ interface ContributionFormProps {
   onSuccess: () => void;
   onPendingChange?: (isPending: boolean) => void;
   formId: string;
+  transactionToEdit?: any; // 🚀 Propriedade nova: recebe os dados da transação se for edição
 }
 
-export function ContributionForm({ onSuccess, onPendingChange, formId }: ContributionFormProps) {
+export function ContributionForm({ onSuccess, onPendingChange, formId, transactionToEdit }: ContributionFormProps) {
   const [isPending, setIsPending] = useState(false);
 
   useEffect(() => {
     onPendingChange?.(isPending);
   }, [isPending, onPendingChange]);
 
+  // 🚀 Lógica de Data: Pega a data da transação (se for edição) ou a data de hoje
+  const defaultDate = transactionToEdit?.purchasedAt
+    ? new Date(transactionToEdit.purchasedAt).toISOString().slice(0, 16)
+    : new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
   const form = useForm<ContributionFormInput, unknown, ContributionFormOutput>({
     resolver: zodResolver(contributionFormSchema),
     defaultValues: {
-      type: TRANSACTION_TYPE.BUY,
-      transactionDate: new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16),
-      ticker: '',
-      assetClass: ASSET_CLASS.STOCK,
-      quantity: undefined as unknown as number,
-      pricePaid: undefined as unknown as number,
-      broker: '',
-      fee: 0,
-      observation: '',
+      type: transactionToEdit?.type || TRANSACTION_TYPE.BUY,
+      transactionDate: defaultDate,
+      ticker: transactionToEdit?.ticker || '',
+      assetClass: transactionToEdit?.assetClass || ASSET_CLASS.STOCK,
+      quantity: transactionToEdit?.quantity || (undefined as unknown as number),
+      pricePaid: transactionToEdit?.pricePaid || (undefined as unknown as number),
+      broker: transactionToEdit?.broker === '-' ? '' : transactionToEdit?.broker || '',
+      fee: transactionToEdit?.fee || 0,
+      observation: transactionToEdit?.observation === '-' ? '' : transactionToEdit?.observation || '',
     },
   });
 
@@ -64,25 +65,30 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
   async function onSubmit(values: ContributionFormOutput) {
     setIsPending(true);
     try {
-      const response = await fetch("http://localhost:8080/api/transactions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+      // 🚀 SE TEM transactionToEdit, É EDIÇÃO (PUT). SE NÃO, É CRIAÇÃO (POST).
+      const url = transactionToEdit 
+        ? `http://localhost:8080/api/transactions/${transactionToEdit.id}`
+        : "http://localhost:8080/api/transactions";
+      
+      const method = transactionToEdit ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method: method,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           type: values.type,
           assetSymbol: values.ticker.toUpperCase(),
           quantity: values.quantity,
           price: values.pricePaid,
-          broker: values.broker.toUpperCase(), // 🚀 Reforço pro Java
+          broker: values.broker.toUpperCase(),
           fee: values.fee,
           transactionDate: `${values.transactionDate}:00`,
-          observation: values.observation ? values.observation.toUpperCase() : '' // 🚀 Reforço pro Java
+          observation: values.observation ? values.observation.toUpperCase() : ''
         }),
       });
 
       if (response.ok) {
-        alert("Transação salva com sucesso!");
+        alert(transactionToEdit ? "Transação atualizada com sucesso!" : "Transação salva com sucesso!");
         onSuccess(); 
         window.location.reload(); 
       } else {
@@ -108,12 +114,10 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
               render={({ field }) => (
                 <RadioGroup className="grid-cols-2" value={field.value} onValueChange={field.onChange}>
                   <Label htmlFor="type-buy" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
-                    <RadioGroupItem value={TRANSACTION_TYPE.BUY} id="type-buy" />
-                    Compra
+                    <RadioGroupItem value={TRANSACTION_TYPE.BUY} id="type-buy" /> Compra
                   </Label>
                   <Label htmlFor="type-sell" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
-                    <RadioGroupItem value={TRANSACTION_TYPE.SELL} id="type-sell" />
-                    Venda
+                    <RadioGroupItem value={TRANSACTION_TYPE.SELL} id="type-sell" /> Venda
                   </Label>
                 </RadioGroup>
               )}
@@ -134,40 +138,22 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           <Field data-invalid={!!form.formState.errors.ticker}>
             <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
             <FieldContent>
-              <Input 
-                id="ticker" 
-                placeholder="EX: PETR4" 
-                autoComplete="off" 
-                className="uppercase"
-                aria-invalid={!!form.formState.errors.ticker} 
-                {...form.register('ticker', {
-                  onChange: (e) => {
-                    e.target.value = e.target.value.toUpperCase();
-                  }
-                })} 
-              />
+              <Input id="ticker" placeholder="EX: PETR4" autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.ticker} {...form.register('ticker', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
               <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
             </FieldContent>
           </Field>
-
           <Field data-invalid={!!form.formState.errors.assetClass}>
             <FieldLabel htmlFor="assetClass">Classe</FieldLabel>
             <FieldContent>
-              <Controller
-                control={form.control}
-                name="assetClass"
-                render={({ field }) => (
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}>
-                      <SelectValue placeholder="Classe" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
-                      <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
-                    </SelectContent>
-                  </Select>
-                )}
-              />
+              <Controller control={form.control} name="assetClass" render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}><SelectValue placeholder="Classe" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
+                    <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
+                  </SelectContent>
+                </Select>
+              )} />
               <FieldError errors={form.formState.errors.assetClass ? [form.formState.errors.assetClass] : undefined} />
             </FieldContent>
           </Field>
@@ -176,19 +162,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         <Field data-invalid={!!form.formState.errors.broker}>
           <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>
           <FieldContent>
-            {/* 🚀 LÓGICA DE MAIÚSCULO NA CORRETORA */}
-            <Input 
-              id="broker" 
-              placeholder="EX: CLEAR, NUINVEST, BINANCE..." 
-              autoComplete="off" 
-              className="uppercase"
-              aria-invalid={!!form.formState.errors.broker} 
-              {...form.register('broker', {
-                onChange: (e) => {
-                  e.target.value = e.target.value.toUpperCase();
-                }
-              })} 
-            />
+            <Input id="broker" placeholder="EX: CLEAR, NUINVEST, BINANCE..." autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.broker} {...form.register('broker', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
             <FieldError errors={form.formState.errors.broker ? [form.formState.errors.broker] : undefined} />
           </FieldContent>
         </Field>
@@ -201,7 +175,6 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
               <FieldError errors={form.formState.errors.quantity ? [form.formState.errors.quantity] : undefined} />
             </FieldContent>
           </Field>
-
           <Field data-invalid={!!form.formState.errors.pricePaid}>
             <FieldLabel htmlFor="pricePaid">{isSell ? 'Preço (venda)' : 'Preço (compra)'}</FieldLabel>
             <FieldContent>
@@ -222,23 +195,10 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         <Field data-invalid={!!form.formState.errors.observation}>
           <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>
           <FieldContent>
-            {/* 🚀 LÓGICA DE MAIÚSCULO NA OBSERVAÇÃO */}
-            <Input 
-              id="observation" 
-              placeholder="EX: APORTE MENSAL, PAGAMENTO DE DIVIDENDOS..." 
-              autoComplete="off" 
-              className="uppercase"
-              aria-invalid={!!form.formState.errors.observation} 
-              {...form.register('observation', {
-                onChange: (e) => {
-                  e.target.value = e.target.value.toUpperCase();
-                }
-              })} 
-            />
+            <Input id="observation" placeholder="EX: APORTE MENSAL..." autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.observation} {...form.register('observation', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
             <FieldError errors={form.formState.errors.observation ? [form.formState.errors.observation] : undefined} />
           </FieldContent>
         </Field>
-
       </FieldGroup>
     </form>
   );
