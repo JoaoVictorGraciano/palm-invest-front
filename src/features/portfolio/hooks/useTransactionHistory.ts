@@ -20,14 +20,16 @@ export function useTransactionHistory() {
       // 2. Traduz o "idioma" do Java para o "idioma" da tabela do template
       return dbTransactions.map((t: any) => ({
         id: t.id.toString(),
-        type: t.type,                // 'BUY' ou 'SELL'
-        ticker: t.assetSymbol,       // O Java chama de assetSymbol, o template lê ticker
-        assetClass: 'STOCK',         // Forçando para Ação por enquanto
+        type: t.type,                
+        ticker: t.assetSymbol,       
+        assetClass: 'STOCK',         
         quantity: Number(t.quantity),
-        pricePaid: Number(t.price),  // A tabela lê pricePaid
-        purchasedAt: t.transactionDate, // Aqui a data mapeada pro ordenamento funcionar!
-        broker: t.broker || '-',     // Puxa a corretora (se for nulo, põe um tracinho)
-        fee: Number(t.fee || 0)      // Puxa a taxa garantindo que é um número
+        pricePaid: Number(t.price),  
+        purchasedAt: t.transactionDate,
+        broker: t.broker || '-',     
+        fee: Number(t.fee || 0),
+        // 🚀 ADICIONE ESTA LINHA:
+        observation: t.observation || '-'
       }));
     },
   });

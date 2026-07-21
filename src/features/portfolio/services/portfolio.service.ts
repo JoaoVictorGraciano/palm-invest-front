@@ -3,6 +3,7 @@ import type { Asset, Portfolio } from '@/types';
 import { calculateAssetProfit, calculatePortfolioTotals } from '@/utils';
 import { fetchCryptoQuotes, fetchStockQuotes, type Quote, type QuoteProviderError } from '@/services';
 import { getHoldingsFromTransactions } from '@/features/portfolio/services/transactions.repository';
+import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { AssetHolding, CryptoHolding, StockHolding } from '@/features/portfolio/types';
 
 function isStockHolding(holding: AssetHolding): holding is StockHolding {
@@ -28,10 +29,8 @@ function buildAsset(holding: AssetHolding, quotes: Quote[], updatedAt: string): 
   } as Asset;
 }
 
-// 🚀 AQUI ESTÁ A MÁGICA: Conectando no Spring Boot
 export async function getPortfolioHoldings(): Promise<AssetHolding[]> {
   try {
-    // 1. Vai até a porta 8080 buscar os dados reais no banco de dados
     const response = await fetch("http://localhost:8080/api/transactions");
     
     if (!response.ok) {
@@ -40,23 +39,48 @@ export async function getPortfolioHoldings(): Promise<AssetHolding[]> {
 
     const dbTransactions = await response.json();
 
-    // 2. Traduz as variáveis do Java para as variáveis que o Front-End espera
-    const mappedTransactions = dbTransactions.map((t: any) => ({
-      id: t.id.toString(),
-      type: t.type,           // 'BUY' ou 'SELL'
-      ticker: t.assetSymbol,  // O Java chama de assetSymbol, o Front chama de ticker
-      quantity: Number(t.quantity), // <-- MUDOU AQUI: Converte para número
-      price: Number(t.price),       // <-- MUDOU AQUI: Converte para número
-      date: t.transactionDate,
-      assetClass: 'STOCK'           // <-- MUDOU AQUI: Avisa que é uma Ação! (Isso faz aparecer na tela)
-    }));
+    // 1. Ordenação cronológica garantida
+    dbTransactions.sort((a: any, b: any) => 
+      new Date(a.transactionDate).getTime() - new Date(b.transactionDate).getTime()
+    );
 
-    // 3. Manda para o calculador do Front-End fazer o preço médio
+    // 2. Tradução blindada contra erros
+    const mappedTransactions = dbTransactions.map((t: any) => {
+      const qty = Number(t.quantity);
+      const rawPrice = Number(t.price);
+      const fee = Number(t.fee || 0);
+
+      // Garante que o tipo bata perfeitamente com o que o Front-End espera
+      const isSell = t.type?.toUpperCase() === 'SELL' || t.type?.toUpperCase() === 'VENDA';
+      const safeType = isSell ? TRANSACTION_TYPE.SELL : TRANSACTION_TYPE.BUY;
+
+      // Matemática do custo médio com taxas embutidas
+      const effectivePrice = !isSell 
+        ? (qty * rawPrice + fee) / qty 
+        : (qty * rawPrice - fee) / qty;
+
+      // Se não tem número no ticker (ex: BTC, ETH) ou for os famosos, é Cripto. Senão é Ação.
+      const tickerStr = (t.assetSymbol || '').toUpperCase();
+      const isCrypto = tickerStr === 'BTC' || tickerStr === 'ETH' || tickerStr === 'SOL' || !tickerStr.match(/\d/);
+
+      return {
+        id: t.id.toString(),
+        type: safeType,
+        ticker: tickerStr,
+        name: tickerStr, // 🚀 Resolve o Bug #1 (nome vazio)
+        quantity: qty,
+        pricePaid: effectivePrice, 
+        purchasedAt: t.transactionDate, 
+        date: t.transactionDate,
+        assetClass: isCrypto ? ASSET_CLASS.CRYPTO : ASSET_CLASS.STOCK, // 🚀 Resolve o Bug #3 (enum correto)
+      };
+    });
+
     return getHoldingsFromTransactions(mappedTransactions);
     
   } catch (error) {
     console.error("Erro ao conectar com o banco de dados:", error);
-    return []; // Se a API estiver desligada, retorna a carteira vazia
+    return []; 
   }
 }
 
@@ -66,7 +90,6 @@ export interface PortfolioResult {
 }
 
 export async function getPortfolio(): Promise<PortfolioResult> {
-  // 🚀 Como agora consultamos a rede, colocamos o "await" aqui!
   const holdings = await getPortfolioHoldings();
   
   const stockTickers = holdings.filter(isStockHolding).map((holding) => holding.ticker);

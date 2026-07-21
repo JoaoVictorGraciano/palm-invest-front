@@ -22,9 +22,8 @@ const contributionFormSchema = z.object({
   assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
-  broker: z.string().trim().min(1, 'Informe a corretora (Ex: Clear, XP, Rico).'),
+  broker: z.string().trim().min(1, 'Informe a corretora (Ex: CLEAR, XP).'),
   fee: z.coerce.number().min(0, 'A taxa não pode ser negativa.'),
-  // 🚀 NOVO CAMPO: Zod aceita como opcional
   observation: z.string().optional(),
 });
 
@@ -55,7 +54,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
       pricePaid: undefined as unknown as number,
       broker: '',
       fee: 0,
-      observation: '', // 🚀 Começa vazio
+      observation: '',
     },
   });
 
@@ -72,20 +71,18 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         },
         body: JSON.stringify({
           type: values.type,
-          // Reforço de segurança: garante o maiúsculo antes de ir pro Java
           assetSymbol: values.ticker.toUpperCase(),
           quantity: values.quantity,
           price: values.pricePaid,
-          broker: values.broker,
+          broker: values.broker.toUpperCase(), // 🚀 Reforço pro Java
           fee: values.fee,
           transactionDate: `${values.transactionDate}:00`,
-          // 🚀 Manda a observação pro Java
-          observation: values.observation 
+          observation: values.observation ? values.observation.toUpperCase() : '' // 🚀 Reforço pro Java
         }),
       });
 
       if (response.ok) {
-        alert("Transação salva com sucesso no banco de dados!");
+        alert("Transação salva com sucesso!");
         onSuccess(); 
         window.location.reload(); 
       } else {
@@ -137,10 +134,9 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           <Field data-invalid={!!form.formState.errors.ticker}>
             <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
             <FieldContent>
-              {/* 🚀 LÓGICA DE MAIÚSCULO: className="uppercase" e onInput */}
               <Input 
                 id="ticker" 
-                placeholder="Ex: PETR4" 
+                placeholder="EX: PETR4" 
                 autoComplete="off" 
                 className="uppercase"
                 aria-invalid={!!form.formState.errors.ticker} 
@@ -180,7 +176,19 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
         <Field data-invalid={!!form.formState.errors.broker}>
           <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>
           <FieldContent>
-            <Input id="broker" placeholder="Ex: Clear, NuInvest, Binance..." autoComplete="off" aria-invalid={!!form.formState.errors.broker} {...form.register('broker')} />
+            {/* 🚀 LÓGICA DE MAIÚSCULO NA CORRETORA */}
+            <Input 
+              id="broker" 
+              placeholder="EX: CLEAR, NUINVEST, BINANCE..." 
+              autoComplete="off" 
+              className="uppercase"
+              aria-invalid={!!form.formState.errors.broker} 
+              {...form.register('broker', {
+                onChange: (e) => {
+                  e.target.value = e.target.value.toUpperCase();
+                }
+              })} 
+            />
             <FieldError errors={form.formState.errors.broker ? [form.formState.errors.broker] : undefined} />
           </FieldContent>
         </Field>
@@ -211,16 +219,21 @@ export function ContributionForm({ onSuccess, onPendingChange, formId }: Contrib
           </FieldContent>
         </Field>
 
-        {/* 🚀 NOVO CAMPO: OBSERVAÇÃO */}
         <Field data-invalid={!!form.formState.errors.observation}>
           <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>
           <FieldContent>
+            {/* 🚀 LÓGICA DE MAIÚSCULO NA OBSERVAÇÃO */}
             <Input 
               id="observation" 
-              placeholder="Ex: Aporte mensal, pagamento de dividendos..." 
+              placeholder="EX: APORTE MENSAL, PAGAMENTO DE DIVIDENDOS..." 
               autoComplete="off" 
+              className="uppercase"
               aria-invalid={!!form.formState.errors.observation} 
-              {...form.register('observation')} 
+              {...form.register('observation', {
+                onChange: (e) => {
+                  e.target.value = e.target.value.toUpperCase();
+                }
+              })} 
             />
             <FieldError errors={form.formState.errors.observation ? [form.formState.errors.observation] : undefined} />
           </FieldContent>
