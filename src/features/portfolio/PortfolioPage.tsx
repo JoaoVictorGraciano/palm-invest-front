@@ -5,6 +5,7 @@ import { AssetTable } from '@/features/portfolio/components/AssetTable';
 import { ContributionDialog } from '@/features/portfolio/components/ContributionDialog';
 import { PortfolioSkeleton } from '@/features/portfolio/components/PortfolioSkeleton';
 import { PortfolioSummaryCards } from '@/features/portfolio/components/PortfolioSummaryCards';
+import { PortfolioCharts } from '@/features/portfolio/components/PortfolioCharts'; // 🚀 IMPORTAMOS SEU NOVO GRÁFICO AQUI!
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
 import type { AssetFilter } from '@/features/portfolio/types';
 
@@ -28,7 +29,6 @@ export function PortfolioPage() {
             {isFetching && !isLoading && ' Atualizando cotações…'}
           </p>
         </div>
-        {/* O BOTÃO ELEGANTE VOLTOU AQUI! */}
         <ContributionDialog />
       </div>
 
@@ -46,6 +46,9 @@ export function PortfolioPage() {
       {portfolio && !isLoading && (
         <>
           <PortfolioSummaryCards portfolio={portfolio} />
+          
+          {/* 🚀 E COLOCAMOS ELE NA TELA AQUI: */}
+          <PortfolioCharts portfolio={portfolio} />
           
           <div className="flex flex-col gap-4">
             <AssetClassFilter value={filter} onChange={setFilter} />
