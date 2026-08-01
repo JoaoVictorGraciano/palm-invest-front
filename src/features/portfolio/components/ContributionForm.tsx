@@ -39,9 +39,11 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
     onPendingChange?.(isPending);
   }, [isPending, onPendingChange]);
 
-  // 🚀 Lógica de Data: Pega a data da transação (se for edição) ou a data de hoje
+  // 🚀 Lógica de Data Corrigida: Evita o "Bug do Fuso Horário"
+  // Se for edição, corta a string exata do Java (YYYY-MM-DDTHH:mm) sem converter para UTC.
+  // Se for nova transação, pega a data/hora exata do seu computador no Brasil.
   const defaultDate = transactionToEdit?.purchasedAt
-    ? new Date(transactionToEdit.purchasedAt).toISOString().slice(0, 16)
+    ? transactionToEdit.purchasedAt.substring(0, 16)
     : new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
   const form = useForm<ContributionFormInput, unknown, ContributionFormOutput>({
