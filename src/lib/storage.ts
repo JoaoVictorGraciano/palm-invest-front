@@ -26,3 +26,13 @@ export function writeStorage<T>(key: string, value: T): void {
     // localStorage indisponível (modo privado, quota excedida etc.) — falha silenciosa.
   }
 }
+
+export function removeStorage(key: string): void {
+  if (!isBrowser) return;
+
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // localStorage indisponível — nada a remover.
+  }
+}
