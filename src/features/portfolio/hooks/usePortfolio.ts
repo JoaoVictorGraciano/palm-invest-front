@@ -1,7 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { getPortfolio } from '@/features/portfolio/services/portfolio.service';
+import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
+import { getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
+import { buildPortfolio, getQuotesForHoldings } from '@/features/portfolio/services/portfolio.service';
 import type { QuoteProviderError } from '@/services';
 
 /** Cotações são atualizadas a cada minuto enquanto a tela estiver aberta. */
@@ -18,26 +20,56 @@ function notifyFailures(failures: QuoteProviderError[]) {
 }
 
 /**
- * Busca a carteira com cotações reais via React Query.
+ * Monta a carteira a partir das transações da API (`useTransactions`) e das
+ * cotações dos provedores externos.
  *
- * A query nunca "falha" por causa de uma cotação individual indisponível —
- * `getPortfolio()` já aplica fallback por ativo. Falhas parciais são
- * reportadas via `failures` e notificadas aqui com um toast (deduplicado
- * para não reaparecer a cada refetch com o mesmo resultado). Falhas
- * catastróficas (ex: exceção não tratada) seguem o fluxo normal de erro do
- * React Query e são cobertas pelo `onError` global do `queryClient`.
+ * - Se as transações não puderem ser carregadas, `isError` fica `true` e
+ *   não existe carteira: a tela mostra o erro em vez de uma carteira vazia.
+ * - Cotações nunca derrubam a carteira: um ativo sem cotação usa o custo
+ *   médio como preço atual e a falha é notificada com um toast
+ *   (deduplicado para não reaparecer a cada refetch com o mesmo resultado).
  */
 export function usePortfolio() {
-  const query = useQuery({
-    queryKey: ['portfolio'],
-    queryFn: getPortfolio,
+  const transactionsQuery = useTransactions();
+
+  const holdings = useMemo(
+    () => getHoldingsFromTransactions(transactionsQuery.data ?? []),
+    [transactionsQuery.data],
+  );
+
+  const holdingsKey = useMemo(
+    () => holdings.map((holding) => `${holding.assetClass}:${holding.ticker}`).sort().join(','),
+    [holdings],
+  );
+
+  const quotesQuery = useQuery({
+    queryKey: ['quotes', holdingsKey],
+    queryFn: () => getQuotesForHoldings(holdings),
+    enabled: transactionsQuery.isSuccess && holdings.length > 0,
     refetchInterval: REFRESH_INTERVAL_MS,
+    placeholderData: keepPreviousData,
   });
+
+  const quotesSettled = holdings.length === 0 || quotesQuery.data !== undefined || quotesQuery.isError;
+
+  const portfolio = useMemo(() => {
+    if (!transactionsQuery.isSuccess || !quotesSettled) return undefined;
+
+    const updatedAtMs = quotesQuery.dataUpdatedAt || transactionsQuery.dataUpdatedAt || Date.now();
+    return buildPortfolio(holdings, quotesQuery.data?.quotes ?? [], new Date(updatedAtMs).toISOString());
+  }, [
+    transactionsQuery.isSuccess,
+    transactionsQuery.dataUpdatedAt,
+    quotesSettled,
+    quotesQuery.data,
+    quotesQuery.dataUpdatedAt,
+    holdings,
+  ]);
 
   const lastNotifiedSignatureRef = useRef<string>('');
 
   useEffect(() => {
-    const failures = query.data?.failures ?? [];
+    const failures = quotesQuery.data?.failures ?? [];
     if (failures.length === 0) return;
 
     const signature = failures.map((failure) => `${failure.provider}:${failure.ticker ?? ''}`).join('|');
@@ -45,13 +77,20 @@ export function usePortfolio() {
 
     lastNotifiedSignatureRef.current = signature;
     notifyFailures(failures);
-  }, [query.data]);
+  }, [quotesQuery.data]);
+
+  const { refetch: refetchTransactions } = transactionsQuery;
+  const { refetch: refetchQuotes } = quotesQuery;
+  const refetch = useCallback(async () => {
+    const result = await refetchTransactions();
+    if (result.isSuccess) await refetchQuotes();
+  }, [refetchTransactions, refetchQuotes]);
 
   return {
-    portfolio: query.data?.portfolio,
-    isLoading: query.isPending,
-    isError: query.isError,
-    isFetching: query.isFetching,
-    refetch: query.refetch,
+    portfolio,
+    isLoading: !transactionsQuery.isError && portfolio === undefined,
+    isError: transactionsQuery.isError,
+    isFetching: transactionsQuery.isFetching || quotesQuery.isFetching,
+    refetch,
   };
 }
