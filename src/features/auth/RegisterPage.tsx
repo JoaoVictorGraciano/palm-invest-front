@@ -16,7 +16,8 @@ const registerSchema = z
   .object({
     nome: z.string().trim().min(1, 'Informe seu nome.'),
     email: z.string().trim().min(1, 'Informe o e-mail.').email('Informe um e-mail válido.'),
-    senha: z.string().min(1, 'Informe uma senha.'),
+    // Mesma regra da API (8 a 72 caracteres), para avisar antes de enviar.
+    senha: z.string().min(8, 'A senha deve ter entre 8 e 72 caracteres.').max(72, 'A senha deve ter entre 8 e 72 caracteres.'),
     confirmarSenha: z.string().min(1, 'Confirme a senha.'),
   })
   .refine((values) => values.senha === values.confirmarSenha, {
