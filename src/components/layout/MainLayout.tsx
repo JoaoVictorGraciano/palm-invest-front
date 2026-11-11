@@ -1,6 +1,8 @@
+import { LogOutIcon } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/auth/auth-context';
 import { cn } from '@/lib/utils';
-import { useEffect } from 'react';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Início' },
@@ -9,10 +11,7 @@ const NAV_ITEMS = [
 ];
 
 export function MainLayout() {
-  // Garante que o modo dark seja aplicado sempre que o layout carregar
-  useEffect(() => {
-    document.documentElement.classList.add('dark');
-  }, []);
+  const { logout } = useAuth();
 
   return (
     <div className="flex min-h-svh flex-col bg-background text-foreground">
@@ -38,9 +37,11 @@ export function MainLayout() {
               ))}
             </div>
           </div>
-          
-          {/* Botão de Tema Assassinado! 🥷 */}
-          
+
+          <Button type="button" variant="ghost" size="sm" onClick={logout}>
+            <LogOutIcon />
+            Sair
+          </Button>
         </nav>
       </header>
       <main className="flex-1">

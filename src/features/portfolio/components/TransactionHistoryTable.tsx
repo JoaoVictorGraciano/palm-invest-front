@@ -1,39 +1,36 @@
 import { useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { ContributionForm } from '@/features/portfolio/components/ContributionForm';
+import { useDeleteTransaction } from '@/features/portfolio/hooks/useDeleteTransaction';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
 import { formatCurrency } from '@/utils';
-import { Trash2, Pencil } from 'lucide-react';
-import { ContributionForm } from '@/features/portfolio/components/ContributionForm'; // 🚀 Importa o form!
+
+const EDIT_FORM_ID = 'edit-transaction-form';
 
 interface TransactionHistoryTableProps {
   transactions: Transaction[];
 }
 
 export function TransactionHistoryTable({ transactions }: TransactionHistoryTableProps) {
-  // 🚀 ESTADOS DO MODAL DE EDIÇÃO
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
-
-  async function handleDelete(id: string) {
-    const confirm = window.confirm("Tem certeza que deseja excluir esta transação?");
-    if (!confirm) return;
-
-    try {
-      const response = await fetch(`http://localhost:8080/api/transactions/${id}`, { method: 'DELETE' });
-      if (response.ok) {
-        alert("Transação excluída com sucesso!");
-        window.location.reload(); 
-      } else {
-        alert("Erro ao excluir.");
-      }
-    } catch (error) {
-      console.error("Erro ao deletar:", error);
-      alert("Falha de conexão com o servidor.");
-    }
-  }
+  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const deleteMutation = useDeleteTransaction();
 
   if (transactions.length === 0) {
     return (
@@ -64,11 +61,10 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
           <TableBody>
             {transactions.map((transaction) => {
               const isSell = transaction.type === TRANSACTION_TYPE.SELL;
-              const brokerName = (transaction as any).broker || '-';
-              const feeValue = Number((transaction as any).fee || 0);
-              const obsText = (transaction as any).observation || '-';
+              const brokerName = transaction.broker || '-';
+              const obsText = transaction.observation || '-';
               const baseValue = transaction.quantity * transaction.pricePaid;
-              const totalValue = isSell ? baseValue - feeValue : baseValue + feeValue;
+              const totalValue = isSell ? baseValue - transaction.fee : baseValue + transaction.fee;
 
               const dateObj = new Date(transaction.purchasedAt);
               const dataFormatada = dateObj.toLocaleDateString('pt-BR');
@@ -87,24 +83,26 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
                   <TableCell className="text-muted-foreground text-xs max-w-[150px] truncate" title={obsText}>{obsText}</TableCell>
                   <TableCell className="text-right">{transaction.quantity}</TableCell>
                   <TableCell className="text-right">{formatCurrency(transaction.pricePaid)}</TableCell>
-                  <TableCell className="text-right text-muted-foreground">{formatCurrency(feeValue)}</TableCell>
+                  <TableCell className="text-right text-muted-foreground">{formatCurrency(transaction.fee)}</TableCell>
                   <TableCell className="text-right font-medium">{formatCurrency(totalValue)}</TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
-                      
-                      {/* 🚀 LÁPIS ABRE O MODAL */}
                       <button
+                        type="button"
                         onClick={() => setEditingTransaction(transaction)}
                         className="rounded-md p-2 hover:bg-accent text-muted-foreground hover:text-blue-500 transition-colors"
                         title="Editar transação"
+                        aria-label={`Editar transação de ${transaction.ticker}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
 
                       <button
-                        onClick={() => handleDelete(transaction.id)}
+                        type="button"
+                        onClick={() => setDeletingTransaction(transaction)}
                         className="rounded-md p-2 hover:bg-accent text-muted-foreground hover:text-red-500 transition-colors"
                         title="Excluir transação"
+                        aria-label={`Excluir transação de ${transaction.ticker}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -117,29 +115,52 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
         </Table>
       </div>
 
-      {/* 🚀 MODAL DE EDIÇÃO QUE APARECE QUANDO O STATE É PREENCHIDO */}
       <Dialog open={!!editingTransaction} onOpenChange={(open) => !open && setEditingTransaction(null)}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Editar Transação</DialogTitle>
           </DialogHeader>
-          
+
           {editingTransaction && (
             <>
-              <ContributionForm 
-                formId="edit-transaction-form"
+              <ContributionForm
+                formId={EDIT_FORM_ID}
+                onPendingChange={setIsSaving}
                 onSuccess={() => setEditingTransaction(null)}
-                transactionToEdit={editingTransaction} 
+                transactionToEdit={editingTransaction}
               />
               <div className="flex justify-end pt-4">
-                <Button type="submit" form="edit-transaction-form" className="w-full">
-                  Salvar Alterações
+                <Button type="submit" form={EDIT_FORM_ID} className="w-full" disabled={isSaving}>
+                  {isSaving ? 'Salvando…' : 'Salvar Alterações'}
                 </Button>
               </div>
             </>
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deletingTransaction} onOpenChange={(open) => !open && setDeletingTransaction(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir esta transação?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deletingTransaction &&
+                `${deletingTransaction.type === TRANSACTION_TYPE.SELL ? 'Venda' : 'Compra'} de ${deletingTransaction.quantity} ${deletingTransaction.ticker}. `}
+              Essa ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deletingTransaction && deleteMutation.mutate(deletingTransaction.id)}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

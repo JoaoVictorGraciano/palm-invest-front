@@ -1,45 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 
-/**
- * Lê o extrato completo de transações reais do Back-End Spring Boot,
- * ordenado da mais recente para a mais antiga.
- */
+/** Extrato completo de transações da API, da mais recente para a mais antiga. */
 export function useTransactionHistory() {
-  const query = useQuery({
-    queryKey: ['transactions'],
-    queryFn: async () => {
-      // 1. Vai buscar a verdade absoluta no seu Java
-      const response = await fetch("http://localhost:8080/api/transactions");
-      
-      if (!response.ok) {
-        throw new Error("Falha ao buscar histórico de transações reais");
-      }
-      
-      const dbTransactions = await response.json();
+  const query = useTransactions();
 
-      // 2. Traduz o "idioma" do Java para o "idioma" da tabela do template
-      return dbTransactions.map((t: any) => ({
-        id: t.id.toString(),
-        type: t.type,                
-        ticker: t.assetSymbol,       
-        assetClass: 'STOCK',         
-        quantity: Number(t.quantity),
-        pricePaid: Number(t.price),  
-        purchasedAt: t.transactionDate,
-        broker: t.broker || '-',     
-        fee: Number(t.fee || 0),
-        // 🚀 ADICIONE ESTA LINHA:
-        observation: t.observation || '-'
-      }));
-    },
-  });
-
-  // 3. Ordena os dados da data mais nova para a mais velha
-  const transactions = [...(query.data ?? [])].sort((a, b) => {
-    // Evita erros caso alguma transação antiga não tenha data
-    if (!a.purchasedAt || !b.purchasedAt) return 0;
-    return b.purchasedAt.localeCompare(a.purchasedAt);
-  });
+  const transactions = useMemo(
+    () => [...(query.data ?? [])].sort((a, b) => b.purchasedAt.localeCompare(a.purchasedAt)),
+    [query.data],
+  );
 
   return { ...query, transactions };
 }

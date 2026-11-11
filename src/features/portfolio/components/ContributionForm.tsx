@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -7,7 +7,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
+import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
+import { getAvailableQuantity } from '@/features/portfolio/services/holdings';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
+import type { Transaction } from '@/features/portfolio/types';
 import { ASSET_CLASS } from '@/types';
 
 const contributionFormSchema = z.object({
@@ -29,11 +33,13 @@ interface ContributionFormProps {
   onSuccess: () => void;
   onPendingChange?: (isPending: boolean) => void;
   formId: string;
-  transactionToEdit?: any; // 🚀 Propriedade nova: recebe os dados da transação se for edição
+  /** Quando presente, o formulário edita esta transação (PUT) em vez de criar uma nova (POST). */
+  transactionToEdit?: Transaction;
 }
 
 export function ContributionForm({ onSuccess, onPendingChange, formId, transactionToEdit }: ContributionFormProps) {
-  const [isPending, setIsPending] = useState(false);
+  const { mutateAsync, isPending } = useSaveTransaction();
+  const { data: transactions } = useTransactions();
 
   useEffect(() => {
     onPendingChange?.(isPending);
@@ -55,9 +61,9 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
       assetClass: transactionToEdit?.assetClass || ASSET_CLASS.STOCK,
       quantity: transactionToEdit?.quantity || (undefined as unknown as number),
       pricePaid: transactionToEdit?.pricePaid || (undefined as unknown as number),
-      broker: transactionToEdit?.broker === '-' ? '' : transactionToEdit?.broker || '',
-      fee: transactionToEdit?.fee || 0,
-      observation: transactionToEdit?.observation === '-' ? '' : transactionToEdit?.observation || '',
+      broker: transactionToEdit?.broker ?? '',
+      fee: transactionToEdit?.fee ?? 0,
+      observation: transactionToEdit?.observation ?? '',
     },
   });
 
@@ -65,42 +71,47 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
   const isSell = transactionType === TRANSACTION_TYPE.SELL;
 
   async function onSubmit(values: ContributionFormOutput) {
-    setIsPending(true);
-    try {
-      // 🚀 SE TEM transactionToEdit, É EDIÇÃO (PUT). SE NÃO, É CRIAÇÃO (POST).
-      const url = transactionToEdit 
-        ? `http://localhost:8080/api/transactions/${transactionToEdit.id}`
-        : "http://localhost:8080/api/transactions";
-      
-      const method = transactionToEdit ? "PUT" : "POST";
+    const ticker = values.ticker.toUpperCase();
 
-      const response = await fetch(url, {
-        method: method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: values.type,
-          assetSymbol: values.ticker.toUpperCase(),
-          quantity: values.quantity,
-          price: values.pricePaid,
-          broker: values.broker.toUpperCase(),
-          fee: values.fee,
-          transactionDate: `${values.transactionDate}:00`,
-          observation: values.observation ? values.observation.toUpperCase() : ''
-        }),
-      });
+    // Conveniência no cliente: não deixa vender mais do que há em estoque.
+    // Na edição, a própria transação editada não conta para o saldo.
+    if (values.type === TRANSACTION_TYPE.SELL && transactions) {
+      const others = transactions.filter((transaction) => transaction.id !== transactionToEdit?.id);
+      const available = getAvailableQuantity(others, ticker);
 
-      if (response.ok) {
-        alert(transactionToEdit ? "Transação atualizada com sucesso!" : "Transação salva com sucesso!");
-        onSuccess(); 
-        window.location.reload(); 
-      } else {
-        alert("Erro ao salvar! Verifique se o Back-End está rodando.");
+      if (values.quantity > available) {
+        form.setError(
+          'quantity',
+          {
+            message:
+              available > 0
+                ? `Você possui apenas ${available} unidade(s) de ${ticker}.`
+                : `Você não possui ${ticker} na carteira.`,
+          },
+          { shouldFocus: true },
+        );
+        return;
       }
-    } catch (error) {
-      console.error("Erro:", error);
-      alert("Falha de conexão. O Spring Boot está ligado?");
-    } finally {
-      setIsPending(false);
+    }
+
+    try {
+      // Com `transactionToEdit` é edição (PUT); sem, é criação (POST).
+      await mutateAsync({
+        id: transactionToEdit?.id,
+        input: {
+          type: values.type,
+          ticker,
+          quantity: values.quantity,
+          pricePaid: values.pricePaid,
+          transactionDate: `${values.transactionDate}:00`,
+          broker: values.broker,
+          fee: values.fee,
+          observation: values.observation ?? '',
+        },
+      });
+      onSuccess();
+    } catch {
+      // O erro já foi exibido em um toast pelo `useSaveTransaction`; o diálogo permanece aberto.
     }
   }
 
