@@ -101,6 +101,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
         input: {
           type: values.type,
           ticker,
+          assetClass: values.assetClass,
           quantity: values.quantity,
           pricePaid: values.pricePaid,
           transactionDate: `${values.transactionDate}:00`,

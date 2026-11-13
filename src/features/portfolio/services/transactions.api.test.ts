@@ -3,7 +3,6 @@ import { ASSET_CLASS } from '@/types';
 import { deleteAssetTransactions, PartialAssetDeletionError } from '@/features/portfolio/services/asset-deletion';
 import {
   createTransaction,
-  inferAssetClass,
   toPayload,
   toTransaction,
 } from '@/features/portfolio/services/transactions.api';
@@ -15,6 +14,7 @@ const dto: TransactionDto = {
   id: 7,
   type: 'BUY',
   assetSymbol: 'petr4',
+  assetClass: 'STOCK',
   quantity: '100',
   price: '32.5',
   transactionDate: '2025-03-10T13:00:00',
@@ -26,6 +26,7 @@ const dto: TransactionDto = {
 const input: TransactionInput = {
   type: TRANSACTION_TYPE.SELL,
   ticker: 'btc',
+  assetClass: ASSET_CLASS.CRYPTO,
   quantity: 0.5,
   pricePaid: 300000,
   transactionDate: '2025-06-01T10:30:00',
@@ -55,15 +56,17 @@ describe('mapeamento de transações', () => {
     });
   });
 
-  it('infere a classe pelo ticker enquanto a API não a persiste', () => {
-    expect(inferAssetClass('ITUB4')).toBe(ASSET_CLASS.STOCK);
-    expect(inferAssetClass('btc')).toBe(ASSET_CLASS.CRYPTO);
+  it('usa a classe devolvida pela API, sem inferir pelo ticker', () => {
+    // Ticker sem dígito que é ação e ticker com dígito que é cripto.
+    expect(toTransaction({ ...dto, assetSymbol: 'AAPL', assetClass: 'STOCK' }).assetClass).toBe(ASSET_CLASS.STOCK);
+    expect(toTransaction({ ...dto, assetSymbol: '1INCH', assetClass: 'CRYPTO' }).assetClass).toBe(ASSET_CLASS.CRYPTO);
   });
 
   it('monta o corpo de POST/PUT exatamente com os campos da API, sem id', () => {
     expect(toPayload(input)).toEqual({
       type: 'SELL',
       assetSymbol: 'BTC',
+      assetClass: 'CRYPTO',
       quantity: 0.5,
       price: 300000,
       transactionDate: '2025-06-01T10:30:00',

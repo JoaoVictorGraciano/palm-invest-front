@@ -1,4 +1,3 @@
-import { ASSET_CLASS } from '@/types';
 import type { AssetClass } from '@/types';
 import { httpClient } from '@/services';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
@@ -17,6 +16,7 @@ export interface TransactionDto {
   id: number | string;
   type: string;
   assetSymbol: string;
+  assetClass: AssetClass;
   quantity: number | string;
   price: number | string;
   transactionDate: string;
@@ -29,24 +29,13 @@ export interface TransactionDto {
 export interface TransactionPayload {
   type: TransactionType;
   assetSymbol: string;
+  assetClass: AssetClass;
   quantity: number;
   price: number;
   transactionDate: string;
   broker: string;
   fee: number;
   observation: string;
-}
-
-const KNOWN_CRYPTO_TICKERS = new Set(['BTC', 'ETH', 'SOL']);
-
-/**
- * A API ainda não persiste a classe do ativo, então ela é inferida: tickers
- * da B3 têm dígito (PETR4, ITUB4); o que não tem é tratado como cripto.
- * Remover quando o back-end passar a devolver `assetClass`.
- */
-export function inferAssetClass(ticker: string): AssetClass {
-  const normalized = ticker.trim().toUpperCase();
-  return KNOWN_CRYPTO_TICKERS.has(normalized) || !/\d/.test(normalized) ? ASSET_CLASS.CRYPTO : ASSET_CLASS.STOCK;
 }
 
 function toTransactionType(type: string | null | undefined): TransactionType {
@@ -61,7 +50,7 @@ export function toTransaction(dto: TransactionDto): Transaction {
     id: String(dto.id),
     ticker,
     name: ticker,
-    assetClass: inferAssetClass(ticker),
+    assetClass: dto.assetClass,
     type: toTransactionType(dto.type),
     quantity: Number(dto.quantity),
     pricePaid: Number(dto.price),
@@ -76,6 +65,7 @@ export function toPayload(input: TransactionInput): TransactionPayload {
   return {
     type: input.type,
     assetSymbol: input.ticker.trim().toUpperCase(),
+    assetClass: input.assetClass,
     quantity: input.quantity,
     price: input.pricePaid,
     transactionDate: input.transactionDate,
