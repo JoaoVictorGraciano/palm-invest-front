@@ -3,9 +3,9 @@
  *
  * - A URL base vem de `VITE_API_URL` (ver `.env.example`).
  * - O token JWT guardado em `tokenStorage` é enviado automaticamente como
- *   `Authorization: Bearer <token>` em toda rota que não seja `/auth/*`.
+ *   `Authorization: Bearer <token>`, exceto no login e no cadastro.
  * - Respostas sem corpo (204) resolvem com `undefined`.
- * - Um 401 fora de `/auth/*` dispara o handler registrado em
+ * - Um 401 fora do login e do cadastro dispara o handler registrado em
  *   `setUnauthorizedHandler` (a sessão é encerrada pela camada de auth).
  *
  * Serviços de domínio devem consumir este client em vez de chamar `fetch`
@@ -15,7 +15,8 @@ import { tokenStorage } from '@/lib/token-storage';
 
 const BASE_URL = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').trim().replace(/\/+$/, '');
 
-const AUTH_PATH_PREFIX = '/auth/';
+/** Rotas públicas: não levam token e um 401 nelas é credencial errada, não sessão expirada. */
+const PUBLIC_PATHS = new Set(['/auth/login', '/auth/cadastrar']);
 
 export class HttpError extends Error {
   /** Status HTTP da resposta; `0` quando a requisição nem chegou ao servidor. */
@@ -73,14 +74,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new HttpError('A URL da API não está configurada. Defina VITE_API_URL no arquivo .env.local.', 0);
   }
 
-  const isAuthRoute = path.startsWith(AUTH_PATH_PREFIX);
+  const isPublicRoute = PUBLIC_PATHS.has(path.split('?')[0]);
 
   const headers = new Headers(init.headers);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
   if (init.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
 
   const token = tokenStorage.get();
-  if (token && !isAuthRoute && !headers.has('Authorization')) {
+  if (token && !isPublicRoute && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
 
@@ -94,7 +95,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const body = await parseBody(response);
 
   if (!response.ok) {
-    if (response.status === 401 && !isAuthRoute) unauthorizedHandler();
+    if (response.status === 401 && !isPublicRoute) unauthorizedHandler();
     throw new HttpError(errorMessage(response.status, body), response.status, body);
   }
 

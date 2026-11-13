@@ -1,5 +1,5 @@
 import { HttpError, httpClient } from '@/services';
-import type { LoginCredentials, RegisterInput } from '@/features/auth/types';
+import type { CurrentUser, LoginCredentials, RegisterInput } from '@/features/auth/types';
 
 /** Autentica na API e devolve o token JWT. */
 export async function login(credentials: LoginCredentials): Promise<string> {
@@ -10,6 +10,11 @@ export async function login(credentials: LoginCredentials): Promise<string> {
   }
 
   return response.token;
+}
+
+/** Dados do usuário dono do token (`GET /auth/me`). */
+export async function getCurrentUser(): Promise<CurrentUser> {
+  return httpClient.get<CurrentUser>('/auth/me');
 }
 
 /** Cadastra um novo usuário (201). Lança `HttpError` 409 se o e-mail já existe e 400 se há campos inválidos. */
