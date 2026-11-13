@@ -65,6 +65,48 @@ async function fillRest(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByLabelText('Preço (compra)'), '32.5');
 }
 
+describe('ContributionForm: erros da API nos campos', () => {
+  async function submitPetr4(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText('Ativo'), 'petr');
+    await user.click(await screen.findByRole('option', { name: /PETR4/ }));
+    await fillRest(user);
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+  }
+
+  it('mostra o 422 de saldo no campo de quantidade e mantém o formulário aberto', async () => {
+    const mensagem = 'Saldo insuficiente de PETR4 na data da operação.';
+    stubNetwork({ create: () => jsonResponse({ mensagem }, 422) });
+    const { user, onSuccess } = renderForm();
+
+    await submitPetr4(user);
+
+    expect(await screen.findByText(mensagem)).toBeInTheDocument();
+    expect(screen.getByLabelText('Qtd comprada')).toHaveAttribute('aria-invalid', 'true');
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it('mostra cada erro de validação do 400 no campo correspondente', async () => {
+    stubNetwork({
+      create: () =>
+        jsonResponse(
+          [
+            { campo: 'price', mensagem: 'Preço com casas demais.' },
+            { campo: 'transactionDate', mensagem: 'A data não pode ser futura.' },
+          ],
+          400,
+        ),
+    });
+    const { user, onSuccess } = renderForm();
+
+    await submitPetr4(user);
+
+    expect(await screen.findByText('Preço com casas demais.')).toBeInTheDocument();
+    expect(screen.getByText('A data não pode ser futura.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Preço (compra)')).toHaveAttribute('aria-invalid', 'true');
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+});
+
 describe('ContributionForm: ticker validado pela busca', () => {
   it('não salva um ticker digitado à mão, sem escolher uma sugestão', async () => {
     const fetchMock = stubNetwork();

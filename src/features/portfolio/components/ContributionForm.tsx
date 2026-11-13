@@ -7,12 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { TickerCombobox } from '@/features/portfolio/components/TickerCombobox';
-import { useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
+import { toast } from 'sonner';
+import { isFormError, useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getAvailableQuantity, getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
-import type { AssetSuggestion } from '@/services';
+import { parseValidationErrors } from '@/services';
+import type { AssetSuggestion, HttpError } from '@/services';
 import { ASSET_CLASS } from '@/types';
 
 const contributionFormSchema = z.object({
@@ -29,6 +31,19 @@ const contributionFormSchema = z.object({
 });
 
 type ContributionFormInput = z.input<typeof contributionFormSchema>;
+
+/** Campo do formulário que corresponde a cada campo do corpo da API. */
+const FORM_FIELD_BY_API_FIELD: Record<string, keyof ContributionFormInput | undefined> = {
+  type: 'type',
+  assetSymbol: 'ticker',
+  assetClass: 'ticker',
+  quantity: 'quantity',
+  price: 'pricePaid',
+  transactionDate: 'transactionDate',
+  broker: 'broker',
+  fee: 'fee',
+  observation: 'observation',
+};
 type ContributionFormOutput = z.output<typeof contributionFormSchema>;
 
 interface ContributionFormProps {
@@ -136,8 +151,38 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
         },
       });
       onSuccess();
-    } catch {
-      // O erro já foi exibido em um toast pelo `useSaveTransaction`; o diálogo permanece aberto.
+    } catch (error) {
+      // O diálogo permanece aberto. Os demais erros já viraram toast no `useSaveTransaction`.
+      if (isFormError(error)) showApiError(error);
+    }
+  }
+
+  function showApiError(error: HttpError) {
+    // 422: a regra de saldo do servidor recusou a operação.
+    if (error.status === 422) {
+      form.setError('quantity', { message: error.message }, { shouldFocus: true });
+      return;
+    }
+
+    // 400: lista `[{campo, mensagem}]`, cada mensagem vai para o seu campo.
+    const { fields, general } = parseValidationErrors(error.body);
+    const unmatched = [...general];
+    let focused = false;
+
+    for (const [apiField, message] of Object.entries(fields)) {
+      const formField = FORM_FIELD_BY_API_FIELD[apiField];
+      if (!formField) {
+        unmatched.push(message);
+        continue;
+      }
+      form.setError(formField, { message }, { shouldFocus: !focused });
+      focused = true;
+    }
+
+    if (unmatched.length > 0 || !focused) {
+      toast.error('Não foi possível salvar a transação', {
+        description: unmatched.join(' ') || error.message,
+      });
     }
   }
 

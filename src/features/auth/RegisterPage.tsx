@@ -9,8 +9,8 @@ import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '@/compo
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/features/auth/auth-context';
 import { AuthLayout } from '@/features/auth/components/AuthLayout';
-import { parseValidationErrors, register as registerUser } from '@/features/auth/services/auth.service';
-import { HttpError } from '@/services';
+import { register as registerUser } from '@/features/auth/services/auth.service';
+import { HttpError, parseValidationErrors } from '@/services';
 
 const registerSchema = z
   .object({
