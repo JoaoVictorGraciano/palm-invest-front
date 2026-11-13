@@ -1,12 +1,13 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { HttpError } from '@/services';
 import { TRANSACTIONS_QUERY_KEY } from '@/features/portfolio/hooks/useTransactions';
-import { deleteAssetTransactions, PartialAssetDeletionError } from '@/features/portfolio/services/asset-deletion';
+import { deleteAssetTransactions } from '@/features/portfolio/services/transactions.api';
 
 /**
- * Remove definitivamente um ativo da carteira (todas as suas transações na
- * API) e invalida a query de transações para que o Dashboard, a tabela e o
- * extrato reflitam a remoção — inclusive quando ela foi apenas parcial.
+ * Remove definitivamente um ativo da carteira (todas as suas transações, em
+ * uma única chamada à API) e invalida a query de transações para que o
+ * Dashboard, a tabela e o extrato reflitam a remoção.
  */
 export function useDeleteAsset() {
   const queryClient = useQueryClient();
@@ -18,10 +19,11 @@ export function useDeleteAsset() {
         description: `${ticker} foi removido da carteira.`,
       });
     },
-    onError: (error) => {
-      if (error instanceof PartialAssetDeletionError) {
-        toast.error('O ativo foi removido apenas em parte', {
-          description: `${error.deleted} de ${error.total} transações de ${error.ticker} foram excluídas. Tente remover novamente.`,
+    onError: (error, ticker) => {
+      // 404: o ativo já não tinha transações (ex: removido em outra aba).
+      if (error instanceof HttpError && error.status === 404) {
+        toast.info('Ativo já removido', {
+          description: `${ticker.toUpperCase()} não tinha mais transações na carteira.`,
         });
         return;
       }

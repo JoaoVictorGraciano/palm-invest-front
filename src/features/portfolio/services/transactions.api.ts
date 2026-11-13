@@ -96,3 +96,26 @@ export async function updateTransaction(id: string, input: TransactionInput): Pr
 export async function deleteTransaction(id: string): Promise<void> {
   await httpClient.delete(`${TRANSACTIONS_PATH}/${encodeURIComponent(id)}`);
 }
+
+export interface AssetDeletionResult {
+  ticker: string;
+  /** Quantas transações foram apagadas. */
+  deleted: number;
+}
+
+/**
+ * Remove um ativo da carteira apagando todas as suas transações em uma única
+ * chamada (`DELETE /api/transactions?assetSymbol=X`), atômica no servidor.
+ * Lança `HttpError` 404 quando o ativo não tem nenhuma transação.
+ */
+export async function deleteAssetTransactions(ticker: string): Promise<AssetDeletionResult> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const response = await httpClient.delete<{ assetSymbol?: string; excluidas?: number } | undefined>(
+    `${TRANSACTIONS_PATH}?assetSymbol=${encodeURIComponent(normalizedTicker)}`,
+  );
+
+  return {
+    ticker: response?.assetSymbol ?? normalizedTicker,
+    deleted: Number(response?.excluidas ?? 0),
+  };
+}

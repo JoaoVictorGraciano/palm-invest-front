@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ASSET_CLASS } from '@/types';
-import { deleteAssetTransactions, PartialAssetDeletionError } from '@/features/portfolio/services/asset-deletion';
 import {
   createTransaction,
+  deleteAssetTransactions,
   toPayload,
   toTransaction,
 } from '@/features/portfolio/services/transactions.api';
@@ -91,35 +91,21 @@ describe('mapeamento de transações', () => {
 });
 
 describe('deleteAssetTransactions', () => {
-  const list = [
-    { ...dto, id: 1, assetSymbol: 'PETR4' },
-    { ...dto, id: 2, assetSymbol: 'ITUB4' },
-    { ...dto, id: 3, assetSymbol: 'PETR4' },
-  ];
-
-  it('exclui na API apenas as transações do ticker', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) =>
-      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : jsonResponse(list),
-    );
+  it('apaga todas as transações do ativo com uma única chamada DELETE', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ assetSymbol: 'PETR4', excluidas: 2 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(deleteAssetTransactions('petr4')).resolves.toEqual({ ticker: 'PETR4', deleted: 2 });
+    await expect(deleteAssetTransactions(' petr4 ')).resolves.toEqual({ ticker: 'PETR4', deleted: 2 });
 
-    const deletedUrls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE').map(([url]) => url);
-    expect(deletedUrls).toEqual(['http://api.test/api/transactions/1', 'http://api.test/api/transactions/3']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://api.test/api/transactions?assetSymbol=PETR4');
+    expect(init?.method).toBe('DELETE');
   });
 
-  it('avisa quando só parte das transações foi excluída', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
-      if (init?.method !== 'DELETE') return jsonResponse(list);
-      return new Response(null, { status: String(url).endsWith('/3') ? 500 : 204 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('propaga o 404 quando o ativo não tem transações', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ mensagem: 'Nenhuma transação' }, 404)));
 
-    await expect(deleteAssetTransactions('PETR4')).rejects.toMatchObject({
-      name: PartialAssetDeletionError.name,
-      deleted: 1,
-      total: 2,
-    });
+    await expect(deleteAssetTransactions('PETR4')).rejects.toMatchObject({ name: 'HttpError', status: 404 });
   });
 });
