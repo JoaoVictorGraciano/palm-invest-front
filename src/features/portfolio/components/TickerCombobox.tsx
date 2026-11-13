@@ -56,7 +56,11 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
     return [...owned, ...suggestions.filter((suggestion) => !seen.has(optionKey(suggestion)))];
   }, [ownedAssets, suggestions, term]);
 
-  const showList = open && !selected && term !== '';
+  // A lista fica montada enquanto há texto e nenhuma escolha; perder o foco
+  // só a esconde. Removê-la do DOM durante a troca de foco faz o diálogo
+  // (Radix FocusScope) recapturar o foco, e o campo clicado não o recebe.
+  const hasList = !selected && term !== '';
+  const showList = open && hasList;
   const highlighted = Math.min(activeIndex, Math.max(options.length - 1, 0));
 
   function choose(option: AssetSuggestion) {
@@ -119,8 +123,13 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
         onKeyDown={handleKeyDown}
       />
 
-      {showList && (
-        <div className="absolute top-full right-0 left-0 z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
+      {hasList && (
+        <div
+          hidden={!open}
+          // Cliques na lista não tiram o foco do campo.
+          onMouseDown={(event) => event.preventDefault()}
+          className="absolute top-full right-0 left-0 z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md"
+        >
           <ul id={listboxId} role="listbox" aria-label="Sugestões de ativos">
             {options.map((option, index) => (
               <li
@@ -132,8 +141,6 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
                   'flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm',
                   index === highlighted && 'bg-accent text-accent-foreground',
                 )}
-                // `mousedown` com preventDefault mantém o foco no campo até o clique terminar.
-                onMouseDown={(event) => event.preventDefault()}
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choose(option)}
               >

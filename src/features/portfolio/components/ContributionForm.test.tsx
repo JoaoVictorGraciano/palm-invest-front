@@ -156,6 +156,21 @@ describe('ContributionForm: ticker validado pela busca', () => {
     expect(JSON.parse(String(init?.body))).toMatchObject({ assetSymbol: 'BTC', assetClass: 'CRYPTO' });
   });
 
+  it('ao sair do campo, a lista é escondida sem ser removida e o foco vai para o campo clicado', async () => {
+    stubNetwork();
+    const { user } = renderForm();
+
+    await user.type(screen.getByLabelText('Ativo'), 'petr');
+    await screen.findByRole('option', { name: /PETR4/ });
+    const broker = screen.getByLabelText('Corretora / Exchange');
+    await user.click(broker);
+
+    expect(broker).toHaveFocus();
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+    // Continua no DOM (só escondida): removê-la na troca de foco fazia o diálogo roubar o foco.
+    expect(screen.getByRole('listbox', { hidden: true })).toBeInTheDocument();
+  });
+
   it('digitar depois de escolher desfaz a escolha', async () => {
     const fetchMock = stubNetwork();
     const { user } = renderForm();

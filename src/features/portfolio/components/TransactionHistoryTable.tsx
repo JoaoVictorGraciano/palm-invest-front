@@ -116,7 +116,7 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
       </div>
 
       <Dialog open={!!editingTransaction} onOpenChange={(open) => !open && setEditingTransaction(null)}>
-        <DialogContent className="sm:max-w-[425px]">
+        <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Editar Transação</DialogTitle>
           </DialogHeader>
