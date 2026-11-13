@@ -40,10 +40,11 @@ describe('searchAssets', () => {
     const result = await searchAssets(' petr ');
 
     expect(result).toEqual({
+      // O símbolo igual ao texto digitado vem primeiro.
       suggestions: [
+        { ticker: 'PETR', name: 'Petro', assetClass: 'CRYPTO' },
         { ticker: 'PETR4', name: 'PETROBRAS', assetClass: 'STOCK' },
         { ticker: 'PETR3', name: 'PETR3', assetClass: 'STOCK' },
-        { ticker: 'PETR', name: 'Petro', assetClass: 'CRYPTO' },
       ],
       failedProviders: [],
     });
@@ -69,6 +70,77 @@ describe('searchAssets', () => {
     const { suggestions } = await searchAssets('aaa');
 
     expect(suggestions).toEqual([{ ticker: 'AAA', name: 'Original', assetClass: 'CRYPTO' }]);
+  });
+
+  it('ordena por símbolo igual, depois símbolo ou nome que começa com o texto, depois o resto', async () => {
+    stubProviders({
+      brapi: () =>
+        jsonResponse({
+          stocks: [
+            { stock: 'OBTC3', name: 'ORANJEBTC S.A.' },
+            { stock: 'BTCI11', name: 'BTG PACTUAL CREDITO IMOBILIARIO' },
+          ],
+        }),
+      coingeckoSearch: () =>
+        jsonResponse({
+          coins: [
+            { id: 'bitget-wrapped-btc', name: 'Bitget Wrapped BTC', symbol: 'BGBTC', market_cap_rank: 267 },
+            { id: 'bitcoin-pro', name: 'Bitcoin Pro', symbol: 'BTCP', market_cap_rank: 1582 },
+            { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', market_cap_rank: 1 },
+          ],
+        }),
+    });
+
+    const { suggestions } = await searchAssets('btc');
+
+    expect(suggestions.map((suggestion) => suggestion.ticker)).toEqual(['BTC', 'BTCI11', 'BTCP', 'OBTC3', 'BGBTC']);
+  });
+
+  it('com "BI", o Bitcoin (BTC) vem no topo, acima de moedas pequenas com símbolo começando por BI', async () => {
+    stubProviders({
+      brapi: () =>
+        jsonResponse({
+          stocks: [
+            { stock: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE S.A.' },
+            { stock: 'KLBN4', name: 'KLABIN S.A.' },
+          ],
+        }),
+      coingeckoSearch: () =>
+        jsonResponse({
+          coins: [
+            { id: 'arbitrum', name: 'Arbitrum', symbol: 'ARB', market_cap_rank: 71 },
+            { id: 'bio-protocol', name: 'Bio Protocol', symbol: 'BIO', market_cap_rank: 300 },
+            { id: 'bitcoin-cash', name: 'Bitcoin Cash', symbol: 'BCH', market_cap_rank: 22 },
+            { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', market_cap_rank: 1 },
+          ],
+        }),
+    });
+
+    const { suggestions } = await searchAssets('BI');
+
+    expect(suggestions.map((suggestion) => suggestion.ticker)).toEqual(['BTC', 'BCH', 'BIO', 'MOTV3', 'KLBN4', 'ARB']);
+  });
+
+  it('um símbolo exato de moeda pequena não é cortado pelo limite de sugestões', async () => {
+    stubProviders({
+      coingeckoSearch: () =>
+        jsonResponse({
+          coins: [
+            ...Array.from({ length: 8 }, (_, index) => ({
+              id: `grande-${index}`,
+              name: `Grande ${index}`,
+              symbol: `EEEG${index}`,
+              market_cap_rank: index + 1,
+            })),
+            { id: 'eee-pequena', name: 'Pequena', symbol: 'EEE', market_cap_rank: 4000 },
+          ],
+        }),
+    });
+
+    const { suggestions } = await searchAssets('eee');
+
+    expect(suggestions[0]).toEqual({ ticker: 'EEE', name: 'Pequena', assetClass: 'CRYPTO' });
+    expect(suggestions).toHaveLength(6);
   });
 
   it('mantém as sugestões de um provedor quando o outro falha', async () => {

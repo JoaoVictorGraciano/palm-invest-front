@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { MIN_SEARCH_LENGTH, useAssetSearch } from '@/features/portfolio/hooks/useAssetSearch';
 import { cn } from '@/lib/utils';
+import { sortByMatch } from '@/services';
 import type { AssetSearchProvider, AssetSuggestion } from '@/services';
 import { ASSET_CLASS } from '@/types';
 import type { AssetClass } from '@/types';
@@ -17,6 +18,14 @@ const PROVIDER_FAILURE_LABEL: Record<AssetSearchProvider, string> = {
   brapi: 'A busca de ações está indisponível no momento.',
   coingecko: 'A busca de criptomoedas está indisponível no momento.',
 };
+
+const PROVIDER_BY_CLASS: Record<AssetClass, AssetSearchProvider> = {
+  [ASSET_CLASS.STOCK]: 'brapi',
+  [ASSET_CLASS.CRYPTO]: 'coingecko',
+};
+
+/** Sugestão exibida na lista; `owned` marca os ativos que já estão na carteira. */
+type TickerOption = AssetSuggestion & { owned: boolean };
 
 function optionKey(option: AssetSuggestion): string {
   return `${option.assetClass}:${option.ticker}`;
@@ -48,13 +57,29 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
   const term = text.trim().toUpperCase();
   const { suggestions, failedProviders, isSearching } = useAssetSearch(selected ? '' : text);
 
-  const options = useMemo(() => {
+  const options = useMemo<TickerOption[]>(() => {
     if (term === '') return [];
 
     const owned = (ownedAssets ?? []).filter((asset) => asset.ticker.includes(term));
-    const seen = new Set(owned.map(optionKey));
-    return [...owned, ...suggestions.filter((suggestion) => !seen.has(optionKey(suggestion)))];
-  }, [ownedAssets, suggestions, term]);
+    const ownedKeys = new Set(owned.map(optionKey));
+    const foundKeys = new Set(suggestions.map(optionKey));
+
+    const found = suggestions.map((suggestion) => ({ ...suggestion, owned: ownedKeys.has(optionKey(suggestion)) }));
+    // Ativos da carteira que a busca não devolveu (ex: símbolo antigo, ou provedor fora do ar).
+    const ownedOnly = owned
+      .filter((asset) => !foundKeys.has(optionKey(asset)))
+      .map((asset) => ({ ...asset, owned: true }));
+
+    // Enquanto a busca do provedor funciona, o que veio só da carteira fica
+    // no fim. Se o provedor da classe do ativo falhou, a carteira é a única
+    // fonte e concorre de igual para igual.
+    const providerIsDown = (asset: AssetSuggestion) => failedProviders.includes(PROVIDER_BY_CLASS[asset.assetClass]);
+
+    return [
+      ...sortByMatch(term, [...found, ...ownedOnly.filter(providerIsDown)]),
+      ...sortByMatch(term, ownedOnly.filter((asset) => !providerIsDown(asset))),
+    ];
+  }, [ownedAssets, suggestions, failedProviders, term]);
 
   // A lista fica montada enquanto há texto e nenhuma escolha; perder o foco
   // só a esconde. Removê-la do DOM durante a troca de foco faz o diálogo
@@ -63,10 +88,10 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
   const showList = open && hasList;
   const highlighted = Math.min(activeIndex, Math.max(options.length - 1, 0));
 
-  function choose(option: AssetSuggestion) {
-    setText(option.ticker);
+  function choose({ ticker, name, assetClass }: TickerOption) {
+    setText(ticker);
     setOpen(false);
-    onSelect(option);
+    onSelect({ ticker, name, assetClass });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -146,6 +171,7 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
               >
                 <span className="font-medium">{option.ticker}</span>
                 <span className="min-w-0 flex-1 truncate text-muted-foreground">{option.name}</span>
+                {option.owned && <Badge variant="secondary">Na sua carteira</Badge>}
                 <Badge variant="outline">{ASSET_CLASS_LABEL[option.assetClass]}</Badge>
               </li>
             ))}

@@ -15,18 +15,51 @@ interface ApiReplies {
   create?: () => Response;
   /** Transações já existentes (GET /api/transactions). */
   transactions?: unknown[];
+  /** Resposta da busca de ações (Brapi). */
+  stockSearch?: () => Response;
+  /** Resposta da busca de criptomoedas (CoinGecko). */
+  cryptoSearch?: () => Response;
+}
+
+const DEFAULT_STOCKS = { stocks: [{ stock: 'PETR4', name: 'PETROBRAS PN' }] };
+const DEFAULT_COINS = { coins: [{ id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', market_cap_rank: 1 }] };
+
+/** Compra já registrada na carteira, no formato da API. */
+function ownedBuy(assetSymbol: string, assetClass: 'STOCK' | 'CRYPTO') {
+  return {
+    id: assetSymbol,
+    type: 'BUY',
+    assetSymbol,
+    assetClass,
+    quantity: 1,
+    price: 10,
+    transactionDate: '2025-01-01T10:00:00',
+    broker: 'CLEAR',
+    fee: 0,
+    observation: '',
+  };
+}
+
+/** Ticker de cada sugestão visível, na ordem da lista (é o primeiro elemento de cada linha). */
+function optionTickers(): string[] {
+  return screen.getAllByRole('option').map((option) => option.firstElementChild?.textContent ?? '');
+}
+
+/** Texto de cada sugestão visível, na ordem da lista. */
+function optionTexts(): string[] {
+  return screen.getAllByRole('option').map((option) => option.textContent ?? '');
 }
 
 /** Simula a palm-invest-api e os provedores de busca; nenhuma chamada real sai dos testes. */
-function stubNetwork({ create, transactions = [] }: ApiReplies = {}) {
+function stubNetwork({ create, transactions = [], stockSearch, cryptoSearch }: ApiReplies = {}) {
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
 
     if (url.startsWith('https://brapi.dev/api/quote/list')) {
-      return jsonResponse({ stocks: [{ stock: 'PETR4', name: 'PETROBRAS PN' }] });
+      return (stockSearch ?? (() => jsonResponse(DEFAULT_STOCKS)))();
     }
     if (url.startsWith('https://api.coingecko.com/api/v3/search')) {
-      return jsonResponse({ coins: [{ id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', market_cap_rank: 1 }] });
+      return (cryptoSearch ?? (() => jsonResponse(DEFAULT_COINS)))();
     }
     if (url === 'http://api.test/api/transactions' && init?.method === 'POST') {
       return (create ?? (() => jsonResponse({ id: 1, ...JSON.parse(String(init.body)) }, 201)))();
@@ -104,6 +137,56 @@ describe('ContributionForm: erros da API nos campos', () => {
     expect(screen.getByText('A data não pode ser futura.')).toBeInTheDocument();
     expect(screen.getByLabelText('Preço (compra)')).toHaveAttribute('aria-invalid', 'true');
     expect(onSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContributionForm: ordem das sugestões', () => {
+  it('o BTC da busca fica acima de um símbolo antigo "BITCOIN" da carteira, que leva a etiqueta', async () => {
+    stubNetwork({
+      transactions: [ownedBuy('BITCOIN', 'CRYPTO')],
+      stockSearch: () => jsonResponse({ stocks: [{ stock: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE' }] }),
+    });
+    const { user } = renderForm();
+
+    await user.type(screen.getByLabelText('Ativo'), 'bi');
+    await screen.findByRole('option', { name: /BTC/ });
+
+    const texts = optionTexts();
+    expect(optionTickers()).toEqual(['BTC', 'MOTV3', 'BITCOIN']);
+    expect(texts[0]).not.toContain('Na sua carteira');
+    expect(texts[2]).toContain('Na sua carteira');
+  });
+
+  it('com a busca de cripto fora do ar, o ativo da carteira concorre pela ordem normal', async () => {
+    stubNetwork({
+      transactions: [ownedBuy('BITCOIN', 'CRYPTO')],
+      stockSearch: () => jsonResponse({ stocks: [{ stock: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE' }] }),
+      cryptoSearch: () => jsonResponse({ error: 'fora do ar' }, 503),
+    });
+    const { user } = renderForm();
+
+    await user.type(screen.getByLabelText('Ativo'), 'bi');
+    await screen.findByRole('option', { name: /MOTV3/ });
+
+    // "BITCOIN" começa com o texto digitado; "MOTV3" não.
+    const texts = optionTexts();
+    expect(texts[0]).toMatch(/^BITCOIN/);
+    expect(texts[0]).toContain('Na sua carteira');
+    expect(texts[1]).toMatch(/^MOTV3/);
+    expect(screen.getByText('A busca de criptomoedas está indisponível no momento.')).toBeInTheDocument();
+  });
+
+  it('um ativo da carteira que a busca também devolve aparece uma vez só, com a etiqueta', async () => {
+    stubNetwork({ transactions: [ownedBuy('PETR4', 'STOCK')], cryptoSearch: () => jsonResponse({ coins: [] }) });
+    const { user } = renderForm();
+
+    await user.type(screen.getByLabelText('Ativo'), 'petr');
+    await screen.findByText('PETROBRAS PN');
+
+    const texts = optionTexts();
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).toContain('PETROBRAS PN');
+    expect(texts[0]).toContain('Na sua carteira');
   });
 });
 

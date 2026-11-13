@@ -53,6 +53,32 @@ interface CoinGeckoSearchResponse {
   coins?: CoinGeckoCoin[];
 }
 
+/**
+ * Quão bem um ativo casa com o texto digitado; menor é melhor:
+ * 0. símbolo igual ao texto;
+ * 1. símbolo ou nome começando com o texto;
+ * 2. o resto (o texto aparece no meio do símbolo ou do nome).
+ *
+ * O nome conta no nível 1 para que "BI" traga o Bitcoin (BTC) antes de
+ * moedas pequenas cujo símbolo começa com "BI": dentro do mesmo nível vale
+ * a ordem do provedor, que nas criptos é o valor de mercado.
+ */
+function matchScore(term: string, asset: { ticker: string; name: string }): number {
+  const ticker = asset.ticker.toUpperCase();
+  if (ticker === term) return 0;
+  return ticker.startsWith(term) || asset.name.toUpperCase().startsWith(term) ? 1 : 2;
+}
+
+/**
+ * Ordena sugestões pela qualidade do casamento com o texto digitado. A
+ * ordenação é estável: empates mantêm a ordem de entrada, o que preserva a
+ * ordem do provedor (nas criptos, maior valor de mercado primeiro).
+ */
+export function sortByMatch<T extends { ticker: string; name: string }>(query: string, assets: T[]): T[] {
+  const term = query.trim().toUpperCase();
+  return [...assets].sort((a, b) => matchScore(term, a) - matchScore(term, b));
+}
+
 async function getJson<T>(url: URL, signal?: AbortSignal): Promise<T> {
   const response = await fetch(url, { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -114,12 +140,17 @@ async function fetchBestCoins(query: string, signal?: AbortSignal): Promise<Map<
 export async function searchCryptos(query: string, signal?: AbortSignal): Promise<AssetSuggestion[]> {
   const best = await fetchBestCoins(query, signal);
 
-  return [...best.entries()]
+  // Maior valor de mercado primeiro; depois, o casamento com o texto. Só então
+  // o corte, para um símbolo exato de moeda pequena não ficar de fora.
+  const byMarketCap = [...best.entries()]
     .sort(([, a], [, b]) => rankOf(a) - rankOf(b))
+    .map(([symbol, coin]) => ({ ticker: symbol, name: coin.name, id: coin.id }));
+
+  return sortByMatch(query, byMarketCap)
     .slice(0, MAX_PER_PROVIDER)
-    .map(([symbol, coin]) => {
-      coinIdBySymbol.set(symbol, coin.id);
-      return { ticker: symbol, name: coin.name, assetClass: ASSET_CLASS.CRYPTO };
+    .map(({ ticker, name, id }) => {
+      coinIdBySymbol.set(ticker, id);
+      return { ticker, name, assetClass: ASSET_CLASS.CRYPTO };
     });
 }
 
@@ -140,8 +171,9 @@ export async function resolveCoinGeckoId(ticker: string): Promise<string | undef
 }
 
 /**
- * Busca nos dois provedores ao mesmo tempo. Nunca lança por causa de um
- * provedor: quem falhar aparece em `failedProviders`.
+ * Busca nos dois provedores ao mesmo tempo e devolve as sugestões já
+ * ordenadas (ver `sortByMatch`). Nunca lança por causa de um provedor: quem
+ * falhar aparece em `failedProviders`.
  */
 export async function searchAssets(query: string, signal?: AbortSignal): Promise<AssetSearchResult> {
   const term = query.trim();
@@ -154,10 +186,10 @@ export async function searchAssets(query: string, signal?: AbortSignal): Promise
   if (cryptos.status === 'rejected') failedProviders.push('coingecko');
 
   return {
-    suggestions: [
+    suggestions: sortByMatch(term, [
       ...(stocks.status === 'fulfilled' ? stocks.value : []),
       ...(cryptos.status === 'fulfilled' ? cryptos.value : []),
-    ],
+    ]),
     failedProviders,
   };
 }
