@@ -3,6 +3,7 @@ import { ASSET_CLASS } from '@/types';
 import {
   createTransaction,
   deleteAssetTransactions,
+  listTransactions,
   toPayload,
   toTransaction,
 } from '@/features/portfolio/services/transactions.api';
@@ -60,6 +61,28 @@ describe('mapeamento de transações', () => {
     // Ticker sem dígito que é ação e ticker com dígito que é cripto.
     expect(toTransaction({ ...dto, assetSymbol: 'AAPL', assetClass: 'STOCK' }).assetClass).toBe(ASSET_CLASS.STOCK);
     expect(toTransaction({ ...dto, assetSymbol: '1INCH', assetClass: 'CRYPTO' }).assetClass).toBe(ASSET_CLASS.CRYPTO);
+  });
+
+  it('usa o tipo BUY/SELL exatamente como a API devolve', () => {
+    expect(toTransaction({ ...dto, type: 'BUY' }).type).toBe(TRANSACTION_TYPE.BUY);
+    expect(toTransaction({ ...dto, type: 'SELL' }).type).toBe(TRANSACTION_TYPE.SELL);
+  });
+
+  it('listTransactions mantém a ordem devolvida pela API (mais recente primeiro)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse([
+          { ...dto, id: 3, transactionDate: '2025-05-01T10:00:00' },
+          { ...dto, id: 1, transactionDate: '2025-03-01T10:00:00' },
+          { ...dto, id: 2, transactionDate: '2025-01-01T10:00:00' },
+        ]),
+      ),
+    );
+
+    const transactions = await listTransactions();
+
+    expect(transactions.map((transaction) => transaction.id)).toEqual(['3', '1', '2']);
   });
 
   it('monta o corpo de POST/PUT exatamente com os campos da API, sem id', () => {

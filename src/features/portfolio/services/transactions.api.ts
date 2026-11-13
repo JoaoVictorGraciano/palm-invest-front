@@ -1,6 +1,5 @@
 import type { AssetClass } from '@/types';
 import { httpClient } from '@/services';
-import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction, TransactionInput, TransactionType } from '@/features/portfolio/types';
 
 /**
@@ -14,7 +13,7 @@ const TRANSACTIONS_PATH = '/api/transactions';
 /** Transação como a API devolve. */
 export interface TransactionDto {
   id: number | string;
-  type: string;
+  type: TransactionType;
   assetSymbol: string;
   assetClass: AssetClass;
   quantity: number | string;
@@ -38,11 +37,6 @@ export interface TransactionPayload {
   observation: string;
 }
 
-function toTransactionType(type: string | null | undefined): TransactionType {
-  const normalized = (type ?? '').toUpperCase();
-  return normalized === 'SELL' || normalized === 'VENDA' ? TRANSACTION_TYPE.SELL : TRANSACTION_TYPE.BUY;
-}
-
 export function toTransaction(dto: TransactionDto): Transaction {
   const ticker = (dto.assetSymbol ?? '').trim().toUpperCase();
 
@@ -51,7 +45,7 @@ export function toTransaction(dto: TransactionDto): Transaction {
     ticker,
     name: ticker,
     assetClass: dto.assetClass,
-    type: toTransactionType(dto.type),
+    type: dto.type,
     quantity: Number(dto.quantity),
     pricePaid: Number(dto.price),
     purchasedAt: dto.transactionDate ?? '',
@@ -75,6 +69,7 @@ export function toPayload(input: TransactionInput): TransactionPayload {
   };
 }
 
+/** Lista as transações do usuário, na ordem da API: da mais recente para a mais antiga. */
 export async function listTransactions(): Promise<Transaction[]> {
   const response = await httpClient.get<TransactionDto[] | undefined>(TRANSACTIONS_PATH);
   return (response ?? []).map(toTransaction);
