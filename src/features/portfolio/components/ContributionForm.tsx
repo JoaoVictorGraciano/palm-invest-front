@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -6,18 +6,20 @@ import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '@/compo
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { TickerCombobox } from '@/features/portfolio/components/TickerCombobox';
 import { useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
-import { getAvailableQuantity } from '@/features/portfolio/services/holdings';
+import { getAvailableQuantity, getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
+import type { AssetSuggestion } from '@/services';
 import { ASSET_CLASS } from '@/types';
 
 const contributionFormSchema = z.object({
   type: z.enum([TRANSACTION_TYPE.BUY, TRANSACTION_TYPE.SELL]),
   transactionDate: z.string().min(1, 'Informe a data e hora.'),
-  ticker: z.string().trim().min(1, 'Informe o ticker do ativo.').max(15, 'Use no máximo 15 caracteres.').regex(/^[A-Za-z0-9]+$/, 'Use apenas letras e números.'),
+  // Só é preenchido quando o usuário escolhe um ativo na busca (ver `TickerCombobox`).
+  ticker: z.string().min(1, 'Escolha um ativo na lista de sugestões.'),
   assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
@@ -67,11 +69,34 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
     },
   });
 
+  // Na edição, o ativo já salvo vem escolhido; só é revalidado se o usuário trocar.
+  const [selectedAsset, setSelectedAsset] = useState<AssetSuggestion | null>(() =>
+    transactionToEdit
+      ? { ticker: transactionToEdit.ticker, name: transactionToEdit.name, assetClass: transactionToEdit.assetClass }
+      : null,
+  );
+
+  const ownedAssets = useMemo<AssetSuggestion[]>(
+    () =>
+      getHoldingsFromTransactions(transactions ?? []).map((holding) => ({
+        ticker: holding.ticker,
+        name: holding.name,
+        assetClass: holding.assetClass,
+      })),
+    [transactions],
+  );
+
+  function handleSelectAsset(asset: AssetSuggestion | null) {
+    setSelectedAsset(asset);
+    form.setValue('ticker', asset?.ticker ?? '', { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
+    if (asset) form.setValue('assetClass', asset.assetClass, { shouldDirty: true });
+  }
+
   const transactionType = form.watch('type');
   const isSell = transactionType === TRANSACTION_TYPE.SELL;
 
   async function onSubmit(values: ContributionFormOutput) {
-    const ticker = values.ticker.toUpperCase();
+    const ticker = values.ticker;
 
     // Conveniência no cliente: não deixa vender mais do que há em estoque.
     // Na edição, a própria transação editada não conta para o saldo.
@@ -148,30 +173,27 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
           </FieldContent>
         </Field>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field data-invalid={!!form.formState.errors.ticker}>
-            <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
-            <FieldContent>
-              <Input id="ticker" placeholder="EX: PETR4" autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.ticker} {...form.register('ticker', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
-              <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
-            </FieldContent>
-          </Field>
-          <Field data-invalid={!!form.formState.errors.assetClass}>
-            <FieldLabel htmlFor="assetClass">Classe</FieldLabel>
-            <FieldContent>
-              <Controller control={form.control} name="assetClass" render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}><SelectValue placeholder="Classe" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
-                    <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
-                  </SelectContent>
-                </Select>
-              )} />
-              <FieldError errors={form.formState.errors.assetClass ? [form.formState.errors.assetClass] : undefined} />
-            </FieldContent>
-          </Field>
-        </div>
+        <Field data-invalid={!!form.formState.errors.ticker}>
+          <FieldLabel htmlFor="ticker">Ativo</FieldLabel>
+          <FieldContent>
+            <Controller
+              control={form.control}
+              name="ticker"
+              render={({ field }) => (
+                <TickerCombobox
+                  id="ticker"
+                  inputRef={field.ref}
+                  onBlur={field.onBlur}
+                  selected={selectedAsset}
+                  onSelect={handleSelectAsset}
+                  ownedAssets={ownedAssets}
+                  invalid={!!form.formState.errors.ticker}
+                />
+              )}
+            />
+            <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
+          </FieldContent>
+        </Field>
 
         <Field data-invalid={!!form.formState.errors.broker}>
           <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>

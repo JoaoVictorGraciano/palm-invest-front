@@ -11,7 +11,9 @@
  * genérico de `services/http.ts` (pensado para a API interna da aplicação).
  */
 
-const BRAPI_BASE_URL = 'https://brapi.dev/api';
+import { resolveCoinGeckoId } from './asset-search.service';
+
+const BRAPI_BASE_URL ='https://brapi.dev/api';
 const BRAPI_TOKEN = import.meta.env.VITE_BRAPI_TOKEN as string | undefined;
 
 const COINGECKO_BASE_URL = 'https://api.coingecko.com/api/v3';
@@ -29,6 +31,19 @@ const COINGECKO_ID_BY_TICKER: Record<string, string> = {
   LTC: 'litecoin',
   DOT: 'polkadot',
 };
+
+/**
+ * Id da CoinGecko de um ticker: primeiro o mapa fixo (sem rede); para as
+ * demais moedas, a busca da CoinGecko. Se a busca falhar ou não achar nada,
+ * tenta o próprio ticker como id, e a cotação cai no fallback do ativo.
+ */
+async function coinGeckoIdFor(ticker: string): Promise<string> {
+  const known = COINGECKO_ID_BY_TICKER[ticker.toUpperCase()];
+  if (known) return known;
+
+  const resolved = await resolveCoinGeckoId(ticker).catch(() => undefined);
+  return resolved ?? ticker.toLowerCase();
+}
 
 export type QuoteProvider = 'brapi' | 'coingecko';
 
@@ -140,7 +155,7 @@ export async function fetchCryptoQuotes(tickers: string[], vsCurrency = 'brl'): 
   if (tickers.length === 0) return { quotes: [], errors: [] };
 
   const idByTicker = new Map(
-    tickers.map((ticker) => [ticker, COINGECKO_ID_BY_TICKER[ticker.toUpperCase()] ?? ticker.toLowerCase()]),
+    await Promise.all(tickers.map(async (ticker) => [ticker, await coinGeckoIdFor(ticker)] as const)),
   );
   const ids = [...new Set(idByTicker.values())];
 
