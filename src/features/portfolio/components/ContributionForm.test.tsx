@@ -19,6 +19,8 @@ interface ApiReplies {
   stockSearch?: () => Response;
   /** Resposta da busca de criptomoedas (CoinGecko). */
   cryptoSearch?: () => Response;
+  /** Cotação atual de PETR4 na Brapi; `null` simula a cotação indisponível. */
+  petr4Quote?: number | null;
 }
 
 const DEFAULT_STOCKS = { stocks: [{ stock: 'PETR4', name: 'PETROBRAS PN' }] };
@@ -51,7 +53,7 @@ function optionTexts(): string[] {
 }
 
 /** Simula a palm-invest-api e os provedores de busca; nenhuma chamada real sai dos testes. */
-function stubNetwork({ create, transactions = [], stockSearch, cryptoSearch }: ApiReplies = {}) {
+function stubNetwork({ create, transactions = [], stockSearch, cryptoSearch, petr4Quote = 32 }: ApiReplies = {}) {
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
 
@@ -60,6 +62,14 @@ function stubNetwork({ create, transactions = [], stockSearch, cryptoSearch }: A
     }
     if (url.startsWith('https://api.coingecko.com/api/v3/search')) {
       return (cryptoSearch ?? (() => jsonResponse(DEFAULT_COINS)))();
+    }
+    if (url.startsWith('https://brapi.dev/api/quote/PETR4')) {
+      return petr4Quote === null
+        ? jsonResponse({ error: true, message: 'indisponível' }, 404)
+        : jsonResponse({ results: [{ symbol: 'PETR4', regularMarketPrice: petr4Quote, currency: 'BRL' }] });
+    }
+    if (url.startsWith('https://api.coingecko.com/api/v3/simple/price')) {
+      return jsonResponse({ bitcoin: { brl: 33 } });
     }
     if (url === 'http://api.test/api/transactions' && init?.method === 'POST') {
       return (create ?? (() => jsonResponse({ id: 1, ...JSON.parse(String(init.body)) }, 201)))();
@@ -92,10 +102,15 @@ function renderForm() {
   return { onSuccess, user: userEvent.setup() };
 }
 
-async function fillRest(user: ReturnType<typeof userEvent.setup>) {
+async function fillRest(user: ReturnType<typeof userEvent.setup>, price = '32.5') {
   await user.type(screen.getByLabelText('Corretora / Exchange'), 'clear');
   await user.type(screen.getByLabelText('Qtd comprada'), '10');
-  await user.type(screen.getByLabelText('Preço (compra)'), '32.5');
+  await user.type(screen.getByLabelText('Preço por unidade'), price);
+}
+
+async function choosePetr4(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(screen.getByLabelText('Ativo'), 'petr');
+  await user.click(await screen.findByRole('option', { name: /PETR4/ }));
 }
 
 describe('ContributionForm: erros da API nos campos', () => {
@@ -135,8 +150,96 @@ describe('ContributionForm: erros da API nos campos', () => {
 
     expect(await screen.findByText('Preço com casas demais.')).toBeInTheDocument();
     expect(screen.getByText('A data não pode ser futura.')).toBeInTheDocument();
-    expect(screen.getByLabelText('Preço (compra)')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByLabelText('Preço por unidade')).toHaveAttribute('aria-invalid', 'true');
     expect(onSuccess).not.toHaveBeenCalled();
+  });
+});
+
+describe('ContributionForm: preço por unidade e cotação atual', () => {
+  it('mostra a cotação atual do ativo escolhido junto ao campo de preço por unidade', async () => {
+    stubNetwork({ petr4Quote: 44.7 });
+    const { user } = renderForm();
+
+    await choosePetr4(user);
+
+    expect(await screen.findByText(/Cotação atual: R\$\s44,70 por unidade/)).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('preço mais de 50% diferente da cotação: avisa e só salva depois da confirmação', async () => {
+    const fetchMock = stubNetwork({ petr4Quote: 40 });
+    const { user, onSuccess } = renderForm();
+
+    await choosePetr4(user);
+    await screen.findByText(/Cotação atual/);
+    await fillRest(user, '400');
+
+    expect(screen.getByRole('status')).toHaveTextContent('900% acima da cotação atual de PETR4');
+
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+    expect(await screen.findByRole('alertdialog')).toHaveTextContent('Preço bem diferente da cotação');
+    expect(postCalls(fetchMock)).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Salvar mesmo assim' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(JSON.parse(String(postCalls(fetchMock)[0][1]?.body))).toMatchObject({ assetSymbol: 'PETR4', price: 400 });
+  });
+
+  it('preço quase zero perto da cotação aparece como 99% abaixo, nunca 100%', async () => {
+    stubNetwork({ petr4Quote: 400000 });
+    const { user } = renderForm();
+
+    await choosePetr4(user);
+    await screen.findByText(/Cotação atual/);
+    await fillRest(user, '100');
+
+    expect(screen.getByRole('status')).toHaveTextContent('99% abaixo da cotação atual de PETR4');
+  });
+
+  it('"Revisar preço" fecha a confirmação sem salvar', async () => {
+    const fetchMock = stubNetwork({ petr4Quote: 40 });
+    const { user, onSuccess } = renderForm();
+
+    await choosePetr4(user);
+    await screen.findByText(/Cotação atual/);
+    await fillRest(user, '10');
+    expect(screen.getByRole('status')).toHaveTextContent('75% abaixo da cotação atual de PETR4');
+
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+    await user.click(await screen.findByRole('button', { name: 'Revisar preço' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(postCalls(fetchMock)).toHaveLength(0);
+    expect(onSuccess).not.toHaveBeenCalled();
+  });
+
+  it('diferença de até 50% salva direto, sem aviso', async () => {
+    const fetchMock = stubNetwork({ petr4Quote: 40 });
+    const { user, onSuccess } = renderForm();
+
+    await choosePetr4(user);
+    await screen.findByText(/Cotação atual/);
+    await fillRest(user, '60');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('sem cotação disponível, não compara e salva direto', async () => {
+    const fetchMock = stubNetwork({ petr4Quote: null });
+    const { user, onSuccess } = renderForm();
+
+    await choosePetr4(user);
+    expect(await screen.findByText('Cotação atual indisponível.')).toBeInTheDocument();
+    await fillRest(user, '99999');
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(postCalls(fetchMock)).toHaveLength(1);
   });
 });
 
