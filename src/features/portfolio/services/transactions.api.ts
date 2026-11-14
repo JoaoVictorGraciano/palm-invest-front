@@ -1,7 +1,5 @@
-import { ASSET_CLASS } from '@/types';
 import type { AssetClass } from '@/types';
 import { httpClient } from '@/services';
-import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction, TransactionInput, TransactionType } from '@/features/portfolio/types';
 
 /**
@@ -15,8 +13,9 @@ const TRANSACTIONS_PATH = '/api/transactions';
 /** Transação como a API devolve. */
 export interface TransactionDto {
   id: number | string;
-  type: string;
+  type: TransactionType;
   assetSymbol: string;
+  assetClass: AssetClass;
   quantity: number | string;
   price: number | string;
   transactionDate: string;
@@ -29,29 +28,13 @@ export interface TransactionDto {
 export interface TransactionPayload {
   type: TransactionType;
   assetSymbol: string;
+  assetClass: AssetClass;
   quantity: number;
   price: number;
   transactionDate: string;
   broker: string;
   fee: number;
   observation: string;
-}
-
-const KNOWN_CRYPTO_TICKERS = new Set(['BTC', 'ETH', 'SOL']);
-
-/**
- * A API ainda não persiste a classe do ativo, então ela é inferida: tickers
- * da B3 têm dígito (PETR4, ITUB4); o que não tem é tratado como cripto.
- * Remover quando o back-end passar a devolver `assetClass`.
- */
-export function inferAssetClass(ticker: string): AssetClass {
-  const normalized = ticker.trim().toUpperCase();
-  return KNOWN_CRYPTO_TICKERS.has(normalized) || !/\d/.test(normalized) ? ASSET_CLASS.CRYPTO : ASSET_CLASS.STOCK;
-}
-
-function toTransactionType(type: string | null | undefined): TransactionType {
-  const normalized = (type ?? '').toUpperCase();
-  return normalized === 'SELL' || normalized === 'VENDA' ? TRANSACTION_TYPE.SELL : TRANSACTION_TYPE.BUY;
 }
 
 export function toTransaction(dto: TransactionDto): Transaction {
@@ -61,8 +44,8 @@ export function toTransaction(dto: TransactionDto): Transaction {
     id: String(dto.id),
     ticker,
     name: ticker,
-    assetClass: inferAssetClass(ticker),
-    type: toTransactionType(dto.type),
+    assetClass: dto.assetClass,
+    type: dto.type,
     quantity: Number(dto.quantity),
     pricePaid: Number(dto.price),
     purchasedAt: dto.transactionDate ?? '',
@@ -76,6 +59,7 @@ export function toPayload(input: TransactionInput): TransactionPayload {
   return {
     type: input.type,
     assetSymbol: input.ticker.trim().toUpperCase(),
+    assetClass: input.assetClass,
     quantity: input.quantity,
     price: input.pricePaid,
     transactionDate: input.transactionDate,
@@ -85,6 +69,7 @@ export function toPayload(input: TransactionInput): TransactionPayload {
   };
 }
 
+/** Lista as transações do usuário, na ordem da API: da mais recente para a mais antiga. */
 export async function listTransactions(): Promise<Transaction[]> {
   const response = await httpClient.get<TransactionDto[] | undefined>(TRANSACTIONS_PATH);
   return (response ?? []).map(toTransaction);
@@ -105,4 +90,27 @@ export async function updateTransaction(id: string, input: TransactionInput): Pr
 
 export async function deleteTransaction(id: string): Promise<void> {
   await httpClient.delete(`${TRANSACTIONS_PATH}/${encodeURIComponent(id)}`);
+}
+
+export interface AssetDeletionResult {
+  ticker: string;
+  /** Quantas transações foram apagadas. */
+  deleted: number;
+}
+
+/**
+ * Remove um ativo da carteira apagando todas as suas transações em uma única
+ * chamada (`DELETE /api/transactions?assetSymbol=X`), atômica no servidor.
+ * Lança `HttpError` 404 quando o ativo não tem nenhuma transação.
+ */
+export async function deleteAssetTransactions(ticker: string): Promise<AssetDeletionResult> {
+  const normalizedTicker = ticker.trim().toUpperCase();
+  const response = await httpClient.delete<{ assetSymbol?: string; excluidas?: number } | undefined>(
+    `${TRANSACTIONS_PATH}?assetSymbol=${encodeURIComponent(normalizedTicker)}`,
+  );
+
+  return {
+    ticker: response?.assetSymbol ?? normalizedTicker,
+    deleted: Number(response?.excluidas ?? 0),
+  };
 }

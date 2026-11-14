@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ASSET_CLASS } from '@/types';
-import { deleteAssetTransactions, PartialAssetDeletionError } from '@/features/portfolio/services/asset-deletion';
 import {
   createTransaction,
-  inferAssetClass,
+  deleteAssetTransactions,
+  listTransactions,
   toPayload,
   toTransaction,
 } from '@/features/portfolio/services/transactions.api';
@@ -15,6 +15,7 @@ const dto: TransactionDto = {
   id: 7,
   type: 'BUY',
   assetSymbol: 'petr4',
+  assetClass: 'STOCK',
   quantity: '100',
   price: '32.5',
   transactionDate: '2025-03-10T13:00:00',
@@ -26,6 +27,7 @@ const dto: TransactionDto = {
 const input: TransactionInput = {
   type: TRANSACTION_TYPE.SELL,
   ticker: 'btc',
+  assetClass: ASSET_CLASS.CRYPTO,
   quantity: 0.5,
   pricePaid: 300000,
   transactionDate: '2025-06-01T10:30:00',
@@ -55,15 +57,39 @@ describe('mapeamento de transações', () => {
     });
   });
 
-  it('infere a classe pelo ticker enquanto a API não a persiste', () => {
-    expect(inferAssetClass('ITUB4')).toBe(ASSET_CLASS.STOCK);
-    expect(inferAssetClass('btc')).toBe(ASSET_CLASS.CRYPTO);
+  it('usa a classe devolvida pela API, sem inferir pelo ticker', () => {
+    // Ticker sem dígito que é ação e ticker com dígito que é cripto.
+    expect(toTransaction({ ...dto, assetSymbol: 'AAPL', assetClass: 'STOCK' }).assetClass).toBe(ASSET_CLASS.STOCK);
+    expect(toTransaction({ ...dto, assetSymbol: '1INCH', assetClass: 'CRYPTO' }).assetClass).toBe(ASSET_CLASS.CRYPTO);
+  });
+
+  it('usa o tipo BUY/SELL exatamente como a API devolve', () => {
+    expect(toTransaction({ ...dto, type: 'BUY' }).type).toBe(TRANSACTION_TYPE.BUY);
+    expect(toTransaction({ ...dto, type: 'SELL' }).type).toBe(TRANSACTION_TYPE.SELL);
+  });
+
+  it('listTransactions mantém a ordem devolvida pela API (mais recente primeiro)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () =>
+        jsonResponse([
+          { ...dto, id: 3, transactionDate: '2025-05-01T10:00:00' },
+          { ...dto, id: 1, transactionDate: '2025-03-01T10:00:00' },
+          { ...dto, id: 2, transactionDate: '2025-01-01T10:00:00' },
+        ]),
+      ),
+    );
+
+    const transactions = await listTransactions();
+
+    expect(transactions.map((transaction) => transaction.id)).toEqual(['3', '1', '2']);
   });
 
   it('monta o corpo de POST/PUT exatamente com os campos da API, sem id', () => {
     expect(toPayload(input)).toEqual({
       type: 'SELL',
       assetSymbol: 'BTC',
+      assetClass: 'CRYPTO',
       quantity: 0.5,
       price: 300000,
       transactionDate: '2025-06-01T10:30:00',
@@ -88,35 +114,21 @@ describe('mapeamento de transações', () => {
 });
 
 describe('deleteAssetTransactions', () => {
-  const list = [
-    { ...dto, id: 1, assetSymbol: 'PETR4' },
-    { ...dto, id: 2, assetSymbol: 'ITUB4' },
-    { ...dto, id: 3, assetSymbol: 'PETR4' },
-  ];
-
-  it('exclui na API apenas as transações do ticker', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (_url, init) =>
-      init?.method === 'DELETE' ? new Response(null, { status: 204 }) : jsonResponse(list),
-    );
+  it('apaga todas as transações do ativo com uma única chamada DELETE', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ assetSymbol: 'PETR4', excluidas: 2 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(deleteAssetTransactions('petr4')).resolves.toEqual({ ticker: 'PETR4', deleted: 2 });
+    await expect(deleteAssetTransactions(' petr4 ')).resolves.toEqual({ ticker: 'PETR4', deleted: 2 });
 
-    const deletedUrls = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE').map(([url]) => url);
-    expect(deletedUrls).toEqual(['http://api.test/api/transactions/1', 'http://api.test/api/transactions/3']);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://api.test/api/transactions?assetSymbol=PETR4');
+    expect(init?.method).toBe('DELETE');
   });
 
-  it('avisa quando só parte das transações foi excluída', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async (url, init) => {
-      if (init?.method !== 'DELETE') return jsonResponse(list);
-      return new Response(null, { status: String(url).endsWith('/3') ? 500 : 204 });
-    });
-    vi.stubGlobal('fetch', fetchMock);
+  it('propaga o 404 quando o ativo não tem transações', async () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => jsonResponse({ mensagem: 'Nenhuma transação' }, 404)));
 
-    await expect(deleteAssetTransactions('PETR4')).rejects.toMatchObject({
-      name: PartialAssetDeletionError.name,
-      deleted: 1,
-      total: 2,
-    });
+    await expect(deleteAssetTransactions('PETR4')).rejects.toMatchObject({ name: 'HttpError', status: 404 });
   });
 });

@@ -19,8 +19,10 @@ function isAuthError(error: unknown): boolean {
  */
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: (error) => {
+    onError: (error, query) => {
       if (error instanceof HttpError && error.status === 401) return;
+      // Queries acessórias (ex: nome do usuário) falham em silêncio.
+      if (query.meta?.silent) return;
 
       const message = error instanceof Error ? error.message : 'Erro desconhecido.';
       toast.error('Não foi possível carregar os dados', { description: message });

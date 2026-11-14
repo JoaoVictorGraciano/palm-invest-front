@@ -3,7 +3,7 @@ import type { LoginCredentials } from '@/features/auth/types';
 
 export interface AuthContextValue {
   isAuthenticated: boolean;
-  /** `true` quando a sessão foi encerrada por um 401 da API (token inválido ou expirado). */
+  /** `true` quando a sessão foi encerrada por expiração do token ou por um 401 da API. */
   sessionExpired: boolean;
   login: (credentials: LoginCredentials) => Promise<void>;
   logout: () => void;

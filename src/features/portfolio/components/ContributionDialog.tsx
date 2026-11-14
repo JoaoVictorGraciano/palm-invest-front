@@ -26,7 +26,7 @@ export function ContributionDialog() {
           Nova transação
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[calc(100svh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Registrar transação</DialogTitle>
           <DialogDescription>

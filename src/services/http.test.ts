@@ -42,7 +42,28 @@ describe('httpClient', () => {
     expect(headers.has('Content-Type')).toBe(false);
   });
 
-  it('não envia o token nas rotas de autenticação', async () => {
+  it('envia o Bearer em /auth/me e encerra a sessão se ele responder 401', async () => {
+    tokenStorage.set('token-de-teste');
+    const onUnauthorized = vi.fn();
+    setUnauthorizedHandler(onUnauthorized);
+    const fetchMock = stubFetch(new Response(null, { status: 401 }));
+
+    await expect(httpClient.get('/auth/me')).rejects.toMatchObject({ status: 401 });
+
+    expect(sentHeaders(fetchMock).get('Authorization')).toBe('Bearer token-de-teste');
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('não envia o token no cadastro', async () => {
+    tokenStorage.set('token-de-teste');
+    const fetchMock = stubFetch(jsonResponse({ id: 1 }, 201));
+
+    await httpClient.post('/auth/cadastrar', { nome: 'a', email: 'a@b.c', senha: 'x' });
+
+    expect(sentHeaders(fetchMock).has('Authorization')).toBe(false);
+  });
+
+  it('não envia o token no login', async () => {
     tokenStorage.set('token-de-teste');
     const fetchMock = stubFetch(jsonResponse({ token: 'novo' }));
 

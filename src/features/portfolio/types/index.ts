@@ -34,7 +34,7 @@ export interface Transaction {
   id: string;
   ticker: string;
   name: string;
-  /** Ainda não é persistida pela API: é inferida a partir do ticker. */
+  /** Classe do ativo, persistida pela API. */
   assetClass: AssetClass;
   type: TransactionType;
   /** Quantidade comprada ou vendida nesta transação. */
@@ -55,6 +55,7 @@ export interface Transaction {
 export interface TransactionInput {
   type: TransactionType;
   ticker: string;
+  assetClass: AssetClass;
   quantity: number;
   pricePaid: number;
   /** Data/hora local no formato `YYYY-MM-DDTHH:mm:ss`. */

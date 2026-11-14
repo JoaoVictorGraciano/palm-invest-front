@@ -1,23 +1,39 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
+import { TickerCombobox } from '@/features/portfolio/components/TickerCombobox';
+import { toast } from 'sonner';
+import { isPriceFarFromQuote, priceDeviation, useAssetQuote } from '@/features/portfolio/hooks/useAssetQuote';
+import { isFormError, useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
-import { getAvailableQuantity } from '@/features/portfolio/services/holdings';
+import { getAvailableQuantity, getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
+import { parseValidationErrors } from '@/services';
+import type { AssetSuggestion, HttpError } from '@/services';
 import { ASSET_CLASS } from '@/types';
+import { formatCurrency } from '@/utils';
 
 const contributionFormSchema = z.object({
   type: z.enum([TRANSACTION_TYPE.BUY, TRANSACTION_TYPE.SELL]),
   transactionDate: z.string().min(1, 'Informe a data e hora.'),
-  ticker: z.string().trim().min(1, 'Informe o ticker do ativo.').max(15, 'Use no máximo 15 caracteres.').regex(/^[A-Za-z0-9]+$/, 'Use apenas letras e números.'),
+  // Só é preenchido quando o usuário escolhe um ativo na busca (ver `TickerCombobox`).
+  ticker: z.string().min(1, 'Escolha um ativo na lista de sugestões.'),
   assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
@@ -27,6 +43,19 @@ const contributionFormSchema = z.object({
 });
 
 type ContributionFormInput = z.input<typeof contributionFormSchema>;
+
+/** Campo do formulário que corresponde a cada campo do corpo da API. */
+const FORM_FIELD_BY_API_FIELD: Record<string, keyof ContributionFormInput | undefined> = {
+  type: 'type',
+  assetSymbol: 'ticker',
+  assetClass: 'ticker',
+  quantity: 'quantity',
+  price: 'pricePaid',
+  transactionDate: 'transactionDate',
+  broker: 'broker',
+  fee: 'fee',
+  observation: 'observation',
+};
 type ContributionFormOutput = z.output<typeof contributionFormSchema>;
 
 interface ContributionFormProps {
@@ -67,11 +96,50 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
     },
   });
 
+  // Na edição, o ativo já salvo vem escolhido; só é revalidado se o usuário trocar.
+  const [selectedAsset, setSelectedAsset] = useState<AssetSuggestion | null>(() =>
+    transactionToEdit
+      ? { ticker: transactionToEdit.ticker, name: transactionToEdit.name, assetClass: transactionToEdit.assetClass }
+      : null,
+  );
+
+  const ownedAssets = useMemo<AssetSuggestion[]>(
+    () =>
+      getHoldingsFromTransactions(transactions ?? []).map((holding) => ({
+        ticker: holding.ticker,
+        name: holding.name,
+        assetClass: holding.assetClass,
+      })),
+    [transactions],
+  );
+
+  function handleSelectAsset(asset: AssetSuggestion | null) {
+    setSelectedAsset(asset);
+    form.setValue('ticker', asset?.ticker ?? '', { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
+    if (asset) form.setValue('assetClass', asset.assetClass, { shouldDirty: true });
+  }
+
   const transactionType = form.watch('type');
   const isSell = transactionType === TRANSACTION_TYPE.SELL;
 
+  // Cotação atual do ativo escolhido: referência para o preço por unidade digitado.
+  const quote = useAssetQuote(selectedAsset);
+  const typedPrice = Number(form.watch('pricePaid'));
+  const deviation = priceDeviation(typedPrice, quote.price);
+  const isPriceFar = isPriceFarFromQuote(typedPrice, quote.price);
+
+  /** Valores aguardando o usuário confirmar um preço muito diferente da cotação. */
+  const [pendingConfirmation, setPendingConfirmation] = useState<ContributionFormOutput | null>(null);
+
+  function describeDeviation(price: number): string {
+    const value = priceDeviation(price, quote.price) ?? 0;
+    if (value > 0) return `${Math.round(value * 100)}% acima`;
+    // Abaixo da cotação nunca chega a 100%: evita mostrar "100% abaixo" por arredondamento.
+    return `${Math.min(99, Math.round(-value * 100))}% abaixo`;
+  }
+
   async function onSubmit(values: ContributionFormOutput) {
-    const ticker = values.ticker.toUpperCase();
+    const ticker = values.ticker;
 
     // Conveniência no cliente: não deixa vender mais do que há em estoque.
     // Na edição, a própria transação editada não conta para o saldo.
@@ -94,13 +162,30 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
       }
     }
 
+    // Preço muito diferente da cotação costuma ser engano (ex: valor total no
+    // lugar do preço por unidade), mas pode ser uma operação antiga: em vez de
+    // bloquear, pede confirmação.
+    // Na edição, um preço que já estava salvo e não foi alterado não é perguntado de novo.
+    const keptSavedPrice =
+      transactionToEdit?.ticker === values.ticker && transactionToEdit.pricePaid === values.pricePaid;
+
+    if (!keptSavedPrice && isPriceFarFromQuote(values.pricePaid, quote.price)) {
+      setPendingConfirmation(values);
+      return;
+    }
+
+    await save(values);
+  }
+
+  async function save(values: ContributionFormOutput) {
     try {
       // Com `transactionToEdit` é edição (PUT); sem, é criação (POST).
       await mutateAsync({
         id: transactionToEdit?.id,
         input: {
           type: values.type,
-          ticker,
+          ticker: values.ticker,
+          assetClass: values.assetClass,
           quantity: values.quantity,
           pricePaid: values.pricePaid,
           transactionDate: `${values.transactionDate}:00`,
@@ -110,109 +195,189 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
         },
       });
       onSuccess();
-    } catch {
-      // O erro já foi exibido em um toast pelo `useSaveTransaction`; o diálogo permanece aberto.
+    } catch (error) {
+      // O diálogo permanece aberto. Os demais erros já viraram toast no `useSaveTransaction`.
+      if (isFormError(error)) showApiError(error);
+    }
+  }
+
+  function showApiError(error: HttpError) {
+    // 422: a regra de saldo do servidor recusou a operação.
+    if (error.status === 422) {
+      form.setError('quantity', { message: error.message }, { shouldFocus: true });
+      return;
+    }
+
+    // 400: lista `[{campo, mensagem}]`, cada mensagem vai para o seu campo.
+    const { fields, general } = parseValidationErrors(error.body);
+    const unmatched = [...general];
+    let focused = false;
+
+    for (const [apiField, message] of Object.entries(fields)) {
+      const formField = FORM_FIELD_BY_API_FIELD[apiField];
+      if (!formField) {
+        unmatched.push(message);
+        continue;
+      }
+      form.setError(formField, { message }, { shouldFocus: !focused });
+      focused = true;
+    }
+
+    if (unmatched.length > 0 || !focused) {
+      toast.error('Não foi possível salvar a transação', {
+        description: unmatched.join(' ') || error.message,
+      });
     }
   }
 
   return (
-    <form id={formId} onSubmit={form.handleSubmit(onSubmit)} noValidate>
-      <FieldGroup>
-        <Field data-invalid={!!form.formState.errors.type}>
-          <FieldLabel>Tipo de transação</FieldLabel>
-          <FieldContent>
-            <Controller
-              control={form.control}
-              name="type"
-              render={({ field }) => (
-                <RadioGroup className="grid-cols-2" value={field.value} onValueChange={field.onChange}>
-                  <Label htmlFor="type-buy" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
-                    <RadioGroupItem value={TRANSACTION_TYPE.BUY} id="type-buy" /> Compra
-                  </Label>
-                  <Label htmlFor="type-sell" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
-                    <RadioGroupItem value={TRANSACTION_TYPE.SELL} id="type-sell" /> Venda
-                  </Label>
-                </RadioGroup>
-              )}
-            />
-            <FieldError errors={form.formState.errors.type ? [form.formState.errors.type] : undefined} />
-          </FieldContent>
-        </Field>
-
-        <Field data-invalid={!!form.formState.errors.transactionDate}>
-          <FieldLabel htmlFor="transactionDate">Data e Hora da Transação</FieldLabel>
-          <FieldContent>
-            <Input id="transactionDate" type="datetime-local" aria-invalid={!!form.formState.errors.transactionDate} {...form.register('transactionDate')} />
-            <FieldError errors={form.formState.errors.transactionDate ? [form.formState.errors.transactionDate] : undefined} />
-          </FieldContent>
-        </Field>
-
-        <div className="grid grid-cols-2 gap-4">
-          <Field data-invalid={!!form.formState.errors.ticker}>
-            <FieldLabel htmlFor="ticker">Ticker</FieldLabel>
+    <>
+      <form id={formId} onSubmit={form.handleSubmit(onSubmit)} noValidate>
+        <FieldGroup>
+          <Field data-invalid={!!form.formState.errors.type}>
+            <FieldLabel>Tipo de transação</FieldLabel>
             <FieldContent>
-              <Input id="ticker" placeholder="EX: PETR4" autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.ticker} {...form.register('ticker', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
+              <Controller
+                control={form.control}
+                name="type"
+                render={({ field }) => (
+                  <RadioGroup className="grid-cols-2" value={field.value} onValueChange={field.onChange}>
+                    <Label htmlFor="type-buy" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
+                      <RadioGroupItem value={TRANSACTION_TYPE.BUY} id="type-buy" /> Compra
+                    </Label>
+                    <Label htmlFor="type-sell" className="flex cursor-pointer items-center gap-2 rounded-lg border p-2.5 has-data-checked:border-primary/30 has-data-checked:bg-primary/5">
+                      <RadioGroupItem value={TRANSACTION_TYPE.SELL} id="type-sell" /> Venda
+                    </Label>
+                  </RadioGroup>
+                )}
+              />
+              <FieldError errors={form.formState.errors.type ? [form.formState.errors.type] : undefined} />
+            </FieldContent>
+          </Field>
+
+          <Field data-invalid={!!form.formState.errors.transactionDate}>
+            <FieldLabel htmlFor="transactionDate">Data e Hora da Transação</FieldLabel>
+            <FieldContent>
+              <Input id="transactionDate" type="datetime-local" aria-invalid={!!form.formState.errors.transactionDate} {...form.register('transactionDate')} />
+              <FieldError errors={form.formState.errors.transactionDate ? [form.formState.errors.transactionDate] : undefined} />
+            </FieldContent>
+          </Field>
+
+          <Field data-invalid={!!form.formState.errors.ticker}>
+            <FieldLabel htmlFor="ticker">Ativo</FieldLabel>
+            <FieldContent>
+              <Controller
+                control={form.control}
+                name="ticker"
+                render={({ field }) => (
+                  <TickerCombobox
+                    id="ticker"
+                    inputRef={field.ref}
+                    onBlur={field.onBlur}
+                    selected={selectedAsset}
+                    onSelect={handleSelectAsset}
+                    ownedAssets={ownedAssets}
+                    invalid={!!form.formState.errors.ticker}
+                  />
+                )}
+              />
               <FieldError errors={form.formState.errors.ticker ? [form.formState.errors.ticker] : undefined} />
             </FieldContent>
           </Field>
-          <Field data-invalid={!!form.formState.errors.assetClass}>
-            <FieldLabel htmlFor="assetClass">Classe</FieldLabel>
+
+          <Field data-invalid={!!form.formState.errors.broker}>
+            <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>
             <FieldContent>
-              <Controller control={form.control} name="assetClass" render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="assetClass" className="w-full" aria-invalid={!!form.formState.errors.assetClass}><SelectValue placeholder="Classe" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={ASSET_CLASS.STOCK}>Ação</SelectItem>
-                    <SelectItem value={ASSET_CLASS.CRYPTO}>Criptomoeda</SelectItem>
-                  </SelectContent>
-                </Select>
-              )} />
-              <FieldError errors={form.formState.errors.assetClass ? [form.formState.errors.assetClass] : undefined} />
+              <Input id="broker" placeholder="EX: CLEAR, NUINVEST, BINANCE..." autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.broker} {...form.register('broker', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
+              <FieldError errors={form.formState.errors.broker ? [form.formState.errors.broker] : undefined} />
             </FieldContent>
           </Field>
-        </div>
 
-        <Field data-invalid={!!form.formState.errors.broker}>
-          <FieldLabel htmlFor="broker">Corretora / Exchange</FieldLabel>
-          <FieldContent>
-            <Input id="broker" placeholder="EX: CLEAR, NUINVEST, BINANCE..." autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.broker} {...form.register('broker', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
-            <FieldError errors={form.formState.errors.broker ? [form.formState.errors.broker] : undefined} />
-          </FieldContent>
-        </Field>
+          <div className="grid grid-cols-2 gap-4">
+            <Field data-invalid={!!form.formState.errors.quantity}>
+              <FieldLabel htmlFor="quantity">{isSell ? 'Qtd vendida' : 'Qtd comprada'}</FieldLabel>
+              <FieldContent>
+                <Input id="quantity" type="number" step="any" min="0" placeholder="Ex: 100" aria-invalid={!!form.formState.errors.quantity} {...form.register('quantity')} />
+                <FieldError errors={form.formState.errors.quantity ? [form.formState.errors.quantity] : undefined} />
+              </FieldContent>
+            </Field>
+            <Field data-invalid={!!form.formState.errors.pricePaid}>
+              <FieldLabel htmlFor="pricePaid">Preço por unidade</FieldLabel>
+              <FieldContent>
+                <Input id="pricePaid" type="number" step="any" min="0" placeholder="Ex: 32.50" aria-invalid={!!form.formState.errors.pricePaid} {...form.register('pricePaid')} />
+                {selectedAsset && (
+                  <FieldDescription>
+                    {quote.isLoading
+                      ? 'Buscando cotação atual…'
+                      : quote.price !== null
+                        ? `Cotação atual: ${formatCurrency(quote.price)} por unidade`
+                        : 'Cotação atual indisponível.'}
+                  </FieldDescription>
+                )}
+                <FieldError errors={form.formState.errors.pricePaid ? [form.formState.errors.pricePaid] : undefined} />
+              </FieldContent>
+            </Field>
+          </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <Field data-invalid={!!form.formState.errors.quantity}>
-            <FieldLabel htmlFor="quantity">{isSell ? 'Qtd vendida' : 'Qtd comprada'}</FieldLabel>
+          {isPriceFar && deviation !== null && quote.price !== null && selectedAsset && (
+            <p role="status" className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-sm">
+              O preço informado ({formatCurrency(typedPrice)}) está {describeDeviation(typedPrice)} da cotação atual de{' '}
+              {selectedAsset.ticker} ({formatCurrency(quote.price)}). Confira se você digitou o preço por unidade, e não
+              o valor total da operação.
+            </p>
+          )}
+
+          <Field data-invalid={!!form.formState.errors.fee}>
+            <FieldLabel htmlFor="fee">Taxas e Custos (R$)</FieldLabel>
             <FieldContent>
-              <Input id="quantity" type="number" step="any" min="0" placeholder="Ex: 100" aria-invalid={!!form.formState.errors.quantity} {...form.register('quantity')} />
-              <FieldError errors={form.formState.errors.quantity ? [form.formState.errors.quantity] : undefined} />
+              <Input id="fee" type="number" step="any" min="0" placeholder="Ex: 2.50" aria-invalid={!!form.formState.errors.fee} {...form.register('fee')} />
+              <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
             </FieldContent>
           </Field>
-          <Field data-invalid={!!form.formState.errors.pricePaid}>
-            <FieldLabel htmlFor="pricePaid">{isSell ? 'Preço (venda)' : 'Preço (compra)'}</FieldLabel>
+
+          <Field data-invalid={!!form.formState.errors.observation}>
+            <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>
             <FieldContent>
-              <Input id="pricePaid" type="number" step="any" min="0" placeholder="Ex: 32.50" aria-invalid={!!form.formState.errors.pricePaid} {...form.register('pricePaid')} />
-              <FieldError errors={form.formState.errors.pricePaid ? [form.formState.errors.pricePaid] : undefined} />
+              <Input id="observation" placeholder="EX: APORTE MENSAL..." autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.observation} {...form.register('observation', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
+              <FieldError errors={form.formState.errors.observation ? [form.formState.errors.observation] : undefined} />
             </FieldContent>
           </Field>
-        </div>
+        </FieldGroup>
+      </form>
 
-        <Field data-invalid={!!form.formState.errors.fee}>
-          <FieldLabel htmlFor="fee">Taxas e Custos (R$)</FieldLabel>
-          <FieldContent>
-            <Input id="fee" type="number" step="any" min="0" placeholder="Ex: 2.50" aria-invalid={!!form.formState.errors.fee} {...form.register('fee')} />
-            <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
-          </FieldContent>
-        </Field>
-
-        <Field data-invalid={!!form.formState.errors.observation}>
-          <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>
-          <FieldContent>
-            <Input id="observation" placeholder="EX: APORTE MENSAL..." autoComplete="off" className="uppercase" aria-invalid={!!form.formState.errors.observation} {...form.register('observation', { onChange: (e) => e.target.value = e.target.value.toUpperCase() })} />
-            <FieldError errors={form.formState.errors.observation ? [form.formState.errors.observation] : undefined} />
-          </FieldContent>
-        </Field>
-      </FieldGroup>
-    </form>
+      <AlertDialog
+        open={pendingConfirmation !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingConfirmation(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Preço bem diferente da cotação</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingConfirmation && quote.price !== null && (
+                <>
+                  Você informou {formatCurrency(pendingConfirmation.pricePaid)} por unidade de{' '}
+                  {pendingConfirmation.ticker}, {describeDeviation(pendingConfirmation.pricePaid)} da cotação atual (
+                  {formatCurrency(quote.price)}). Se for uma operação antiga, isso pode estar certo.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Revisar preço</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const values = pendingConfirmation;
+                setPendingConfirmation(null);
+                if (values) void save(values);
+              }}
+            >
+              Salvar mesmo assim
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
