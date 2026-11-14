@@ -1,6 +1,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ASSET_CLASS, isCrypto, isStock } from '@/types';
+import { ASSET_CLASS, isB3Asset, isCrypto } from '@/types';
 import type { AssetClass, Portfolio } from '@/types';
 import { formatCurrency, formatPercentage } from '@/utils';
 
@@ -14,13 +14,13 @@ interface DistributionSlice {
   value: number;
 }
 
-const COLOR_BY_CLASS: Record<AssetClass, string> = {
+const COLOR_BY_CLASS: Partial<Record<AssetClass, string>> = {
   [ASSET_CLASS.STOCK]: 'var(--chart-1)',
   [ASSET_CLASS.CRYPTO]: 'var(--chart-3)',
 };
 
 export function PortfolioDistributionChart({ portfolio }: PortfolioDistributionChartProps) {
-  const stockValue = portfolio.assets.filter(isStock).reduce((sum, asset) => sum + asset.currentValue, 0);
+  const stockValue = portfolio.assets.filter(isB3Asset).reduce((sum, asset) => sum + asset.currentValue, 0);
   const cryptoValue = portfolio.assets.filter(isCrypto).reduce((sum, asset) => sum + asset.currentValue, 0);
   const total = stockValue + cryptoValue;
 

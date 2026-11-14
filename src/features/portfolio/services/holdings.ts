@@ -1,4 +1,4 @@
-import { ASSET_CLASS } from '@/types';
+import { ASSET_CLASS, isB3AssetClass } from '@/types';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { AssetHolding, Transaction } from '@/features/portfolio/types';
 
@@ -52,8 +52,8 @@ export function getHoldingsFromTransactions(transactions: Transaction[]): AssetH
     };
 
     holdings.push(
-      mostRecent.assetClass === ASSET_CLASS.STOCK
-        ? { ...base, assetClass: ASSET_CLASS.STOCK, exchange: 'B3' }
+      isB3AssetClass(mostRecent.assetClass)
+        ? { ...base, assetClass: mostRecent.assetClass, exchange: 'B3' }
         : { ...base, assetClass: ASSET_CLASS.CRYPTO },
     );
   }

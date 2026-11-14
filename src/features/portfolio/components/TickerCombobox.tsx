@@ -6,23 +6,19 @@ import { MIN_SEARCH_LENGTH, useAssetSearch } from '@/features/portfolio/hooks/us
 import { cn } from '@/lib/utils';
 import { sortByMatch } from '@/services';
 import type { AssetSearchProvider, AssetSuggestion } from '@/services';
-import { ASSET_CLASS } from '@/types';
+import { isB3AssetClass } from '@/types';
 import type { AssetClass } from '@/types';
-
-const ASSET_CLASS_LABEL: Record<AssetClass, string> = {
-  [ASSET_CLASS.STOCK]: 'Ação',
-  [ASSET_CLASS.CRYPTO]: 'Cripto',
-};
+import { ASSET_CLASS_LABEL } from '@/utils';
 
 const PROVIDER_FAILURE_LABEL: Record<AssetSearchProvider, string> = {
-  brapi: 'A busca de ações está indisponível no momento.',
+  brapi: 'A busca de ativos da B3 está indisponível no momento.',
   coingecko: 'A busca de criptomoedas está indisponível no momento.',
 };
 
-const PROVIDER_BY_CLASS: Record<AssetClass, AssetSearchProvider> = {
-  [ASSET_CLASS.STOCK]: 'brapi',
-  [ASSET_CLASS.CRYPTO]: 'coingecko',
-};
+/** Provedor que busca cada classe: a Brapi para o que é negociado na B3, a CoinGecko para cripto. */
+function providerOf(assetClass: AssetClass): AssetSearchProvider {
+  return isB3AssetClass(assetClass) ? 'brapi' : 'coingecko';
+}
 
 /** Sugestão exibida na lista; `owned` marca os ativos que já estão na carteira. */
 type TickerOption = AssetSuggestion & { owned: boolean };
@@ -73,7 +69,7 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
     // Enquanto a busca do provedor funciona, o que veio só da carteira fica
     // no fim. Se o provedor da classe do ativo falhou, a carteira é a única
     // fonte e concorre de igual para igual.
-    const providerIsDown = (asset: AssetSuggestion) => failedProviders.includes(PROVIDER_BY_CLASS[asset.assetClass]);
+    const providerIsDown = (asset: AssetSuggestion) => failedProviders.includes(providerOf(asset.assetClass));
 
     return [
       ...sortByMatch(term, [...found, ...ownedOnly.filter(providerIsDown)]),

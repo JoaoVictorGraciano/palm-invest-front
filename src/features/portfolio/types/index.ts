@@ -1,4 +1,4 @@
-import type { AssetClass, AssetProfit, Crypto, Stock } from '@/types';
+import type { AssetClass, AssetProfit, B3Asset, Crypto } from '@/types';
 
 /**
  * Filtro de visualização por classe de ativo na tela da carteira.
@@ -12,9 +12,9 @@ export type AssetFilter = AssetClass | 'ALL';
  * `currentPrice`, `currency` e as métricas de `AssetProfit` são preenchidos
  * dinamicamente após a busca de cotações — ver `services/portfolio.service.ts`.
  */
-export type StockHolding = Omit<Stock, 'currentPrice' | 'currency' | 'updatedAt' | keyof AssetProfit>;
+export type B3Holding = Omit<B3Asset, 'currentPrice' | 'currency' | 'updatedAt' | keyof AssetProfit>;
 export type CryptoHolding = Omit<Crypto, 'currentPrice' | 'currency' | 'updatedAt' | keyof AssetProfit>;
-export type AssetHolding = StockHolding | CryptoHolding;
+export type AssetHolding = B3Holding | CryptoHolding;
 
 /** Natureza de uma transação: compra (aumenta o estoque) ou venda (reduz o estoque). */
 export const TRANSACTION_TYPE = {

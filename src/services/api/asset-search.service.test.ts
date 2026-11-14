@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveCoinGeckoId, searchAssets } from '@/services/api/asset-search.service';
+import { classifyBrapiAsset, resolveCoinGeckoId, searchAssets } from '@/services/api/asset-search.service';
 import { fetchCryptoQuotes } from '@/services/api/quotes.service';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -70,6 +70,41 @@ describe('searchAssets', () => {
     const { suggestions } = await searchAssets('aaa');
 
     expect(suggestions).toEqual([{ ticker: 'AAA', name: 'Original', assetClass: 'CRYPTO' }]);
+  });
+
+  it('classifica os ativos da Brapi pelo type e subType que ela devolve', async () => {
+    stubProviders({
+      brapi: () =>
+        jsonResponse({
+          stocks: [
+            { stock: 'PETR4', name: 'PETROBRAS', type: 'stock', subType: 'stock' },
+            { stock: 'TAEE11', name: 'TAESA', type: 'stock', subType: 'unit' },
+            { stock: 'MXRF11', name: 'MAXI RENDA', type: 'fund', subType: 'fii' },
+            { stock: 'BOVA11', name: 'ISHARES IBOVESPA', type: 'fund', subType: 'etf' },
+            { stock: 'AAPL34', name: 'APPLE', type: 'bdr', subType: 'bdr' },
+            { stock: 'SNAG11', name: 'SUNO AGRO', type: 'fund', subType: 'fi-agro' },
+          ],
+        }),
+    });
+
+    const { suggestions } = await searchAssets('1');
+
+    expect(Object.fromEntries(suggestions.map((suggestion) => [suggestion.ticker, suggestion.assetClass]))).toEqual({
+      PETR4: 'STOCK',
+      TAEE11: 'STOCK',
+      MXRF11: 'FII',
+      BOVA11: 'ETF',
+      AAPL34: 'BDR',
+      SNAG11: 'FII',
+    });
+  });
+
+  it('classifyBrapiAsset: fundos sem subType conhecido ficam como FII; sem tipo, como ação', () => {
+    expect(classifyBrapiAsset('fund', 'fi-infra')).toBe('FII');
+    expect(classifyBrapiAsset('fund', 'fip')).toBe('FII');
+    expect(classifyBrapiAsset('fund', null)).toBe('FII');
+    expect(classifyBrapiAsset('FUND', 'ETF')).toBe('ETF');
+    expect(classifyBrapiAsset(undefined, undefined)).toBe('STOCK');
   });
 
   it('ordena por símbolo igual, depois símbolo ou nome que começa com o texto, depois o resto', async () => {

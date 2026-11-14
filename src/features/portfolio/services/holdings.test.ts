@@ -56,6 +56,21 @@ describe('getHoldingsFromTransactions', () => {
     expect(holdings.map((holding) => holding.ticker)).toEqual(['BTC']);
   });
 
+  it('mantém a classe do ativo (FII, ETF, BDR) na posição, como ativo da B3', () => {
+    const holdings = getHoldingsFromTransactions([
+      transaction({ ticker: 'MXRF11', name: 'MXRF11', assetClass: ASSET_CLASS.FII }),
+      transaction({ ticker: 'BOVA11', name: 'BOVA11', assetClass: ASSET_CLASS.ETF }),
+      transaction({ ticker: 'AAPL34', name: 'AAPL34', assetClass: ASSET_CLASS.BDR }),
+    ]);
+
+    expect(holdings.map((holding) => [holding.ticker, holding.assetClass])).toEqual([
+      ['MXRF11', 'FII'],
+      ['BOVA11', 'ETF'],
+      ['AAPL34', 'BDR'],
+    ]);
+    expect(holdings.every((holding) => 'exchange' in holding && holding.exchange === 'B3')).toBe(true);
+  });
+
   it('getAvailableQuantity devolve o saldo do ticker, ou 0 se não houver posição', () => {
     const transactions = [transaction({ quantity: 100 })];
 

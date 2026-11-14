@@ -1,6 +1,6 @@
 /**
  * Busca de ativos nos mesmos provedores usados para cotação:
- * - Brapi (`/quote/list?search=`): ações e demais papéis da B3.
+ * - Brapi (`/quote/list?search=`): ações, FIIs, ETFs e BDRs da B3.
  * - CoinGecko (`/search?query=`): criptomoedas.
  *
  * É a fonte das sugestões do formulário de transação: um ticker só pode ser
@@ -12,7 +12,7 @@
  * cota da conta em vez da cota anônima.
  */
 import { ASSET_CLASS } from '@/types';
-import type { AssetClass } from '@/types';
+import type { AssetClass, B3AssetClass } from '@/types';
 
 const BRAPI_BASE_URL = 'https://brapi.dev/api';
 const BRAPI_TOKEN = import.meta.env.VITE_BRAPI_TOKEN as string | undefined;
@@ -39,7 +39,7 @@ export interface AssetSearchResult {
 }
 
 interface BrapiListResponse {
-  stocks?: Array<{ stock?: string; name?: string | null }>;
+  stocks?: Array<{ stock?: string; name?: string | null; type?: string | null; subType?: string | null }>;
 }
 
 interface CoinGeckoCoin {
@@ -85,6 +85,34 @@ async function getJson<T>(url: URL, signal?: AbortSignal): Promise<T> {
   return (await response.json()) as T;
 }
 
+/**
+ * Classe de um ativo da Brapi, a partir dos campos `type` e `subType` que
+ * ela devolve em `/quote/list`:
+ *
+ * | type  | subType                              | classe |
+ * |-------|--------------------------------------|--------|
+ * | stock | stock, unit                          | STOCK  |
+ * | bdr   | bdr                                  | BDR    |
+ * | fund  | etf                                  | ETF    |
+ * | fund  | fii                                  | FII    |
+ * | fund  | fi-agro, fi-infra, fip, fidc, (nulo) | FII    |
+ *
+ * A Brapi diferencia FII de ETF pelo `subType`, então não é preciso
+ * adivinhar pelo ticker (os dois terminam em 11, assim como units de ações).
+ * Os demais fundos listados (Fiagro, FI-Infra, FIP, FIDC) não têm classe
+ * própria na palm-invest-api; ficam como FII, a classe mais próxima: são
+ * fundos fechados negociados em bolsa, e não fundos de índice.
+ */
+export function classifyBrapiAsset(type: string | null | undefined, subType: string | null | undefined): B3AssetClass {
+  const kind = (type ?? '').trim().toLowerCase();
+  const subKind = (subType ?? '').trim().toLowerCase();
+
+  if (kind === 'bdr' || subKind === 'bdr') return ASSET_CLASS.BDR;
+  if (subKind === 'etf') return ASSET_CLASS.ETF;
+  if (kind === 'fund' || subKind === 'fii') return ASSET_CLASS.FII;
+  return ASSET_CLASS.STOCK;
+}
+
 export async function searchStocks(query: string, signal?: AbortSignal): Promise<AssetSuggestion[]> {
   const url = new URL(`${BRAPI_BASE_URL}/quote/list`);
   url.searchParams.set('search', query);
@@ -96,7 +124,7 @@ export async function searchStocks(query: string, signal?: AbortSignal): Promise
   return (body.stocks ?? [])
     .map((item) => {
       const ticker = (item.stock ?? '').trim().toUpperCase();
-      return { ticker, name: item.name?.trim() || ticker, assetClass: ASSET_CLASS.STOCK };
+      return { ticker, name: item.name?.trim() || ticker, assetClass: classifyBrapiAsset(item.type, item.subType) };
     })
     .filter((item) => VALID_TICKER.test(item.ticker))
     .slice(0, MAX_PER_PROVIDER);

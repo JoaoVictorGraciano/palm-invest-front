@@ -34,7 +34,7 @@ const contributionFormSchema = z.object({
   transactionDate: z.string().min(1, 'Informe a data e hora.'),
   // Só é preenchido quando o usuário escolhe um ativo na busca (ver `TickerCombobox`).
   ticker: z.string().min(1, 'Escolha um ativo na lista de sugestões.'),
-  assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
+  assetClass: z.enum(Object.values(ASSET_CLASS)),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
   broker: z.string().trim().min(1, 'Informe a corretora (Ex: CLEAR, XP).'),
