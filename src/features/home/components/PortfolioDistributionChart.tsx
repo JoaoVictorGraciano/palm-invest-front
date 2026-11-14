@@ -1,8 +1,8 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ASSET_CLASS, isB3Asset, isCrypto } from '@/types';
+import { ASSET_CLASS } from '@/types';
 import type { AssetClass, Portfolio } from '@/types';
-import { formatCurrency, formatPercentage } from '@/utils';
+import { ASSET_CLASS_PLURAL_LABEL, calculateClassDistribution, formatCurrency, formatPercentage } from '@/utils';
 
 interface PortfolioDistributionChartProps {
   portfolio: Portfolio;
@@ -14,26 +14,33 @@ interface DistributionSlice {
   value: number;
 }
 
-const COLOR_BY_CLASS: Partial<Record<AssetClass, string>> = {
-  [ASSET_CLASS.STOCK]: 'var(--chart-1)',
-  [ASSET_CLASS.CRYPTO]: 'var(--chart-3)',
+/**
+ * Uma cor fixa por classe, para a mesma classe ter sempre a mesma cor. São
+ * os tons já usados nos gráficos da carteira: com cinco classes, os cinzas
+ * do tema ficam parecidos demais entre si.
+ */
+const COLOR_BY_CLASS: Record<AssetClass, string> = {
+  [ASSET_CLASS.STOCK]: '#3b82f6',
+  [ASSET_CLASS.FII]: '#10b981',
+  [ASSET_CLASS.ETF]: '#f59e0b',
+  [ASSET_CLASS.BDR]: '#8b5cf6',
+  [ASSET_CLASS.CRYPTO]: '#ec4899',
 };
 
 export function PortfolioDistributionChart({ portfolio }: PortfolioDistributionChartProps) {
-  const stockValue = portfolio.assets.filter(isB3Asset).reduce((sum, asset) => sum + asset.currentValue, 0);
-  const cryptoValue = portfolio.assets.filter(isCrypto).reduce((sum, asset) => sum + asset.currentValue, 0);
-  const total = stockValue + cryptoValue;
-
-  const slices: DistributionSlice[] = [
-    { key: ASSET_CLASS.STOCK, name: 'Ações', value: stockValue },
-    { key: ASSET_CLASS.CRYPTO, name: 'Criptomoedas', value: cryptoValue },
-  ].filter((slice) => slice.value > 0);
+  // Uma fatia por classe presente na carteira, na ordem padrão das classes.
+  const slices: DistributionSlice[] = calculateClassDistribution(portfolio.assets).map(({ assetClass, value }) => ({
+    key: assetClass,
+    name: ASSET_CLASS_PLURAL_LABEL[assetClass],
+    value,
+  }));
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Distribuição do patrimônio</CardTitle>
-        <CardDescription>Ações vs. Criptomoedas, por valor de mercado atual</CardDescription>
+        <CardDescription>Por classe de ativo, pelo valor de mercado atual</CardDescription>
       </CardHeader>
       <CardContent>
         {total === 0 ? (

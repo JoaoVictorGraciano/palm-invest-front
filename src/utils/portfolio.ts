@@ -1,4 +1,5 @@
-import type { Asset, AssetProfit } from '@/types';
+import type { Asset, AssetClass, AssetProfit } from '@/types';
+import { ASSET_CLASS_ORDER } from './asset-class';
 
 /**
  * Funções puras para cálculo de rentabilidade de ativos e carteiras.
@@ -35,4 +36,23 @@ export function calculatePortfolioTotals(assets: Asset[]): AssetProfit {
   const profitPercentage = totalInvested === 0 ? 0 : (profit / totalInvested) * 100;
 
   return { totalInvested, currentValue, profit, profitPercentage };
+}
+
+export interface ClassDistributionSlice {
+  assetClass: AssetClass;
+  /** Soma do valor de mercado atual dos ativos da classe. */
+  value: number;
+}
+
+/**
+ * Distribuição do patrimônio por classe de ativo, pelo valor de mercado
+ * atual. Devolve só as classes com valor, na ordem padrão de exibição.
+ */
+export function calculateClassDistribution(assets: Asset[]): ClassDistributionSlice[] {
+  return ASSET_CLASS_ORDER.map((assetClass) => ({
+    assetClass,
+    value: assets
+      .filter((asset) => asset.assetClass === assetClass)
+      .reduce((sum, asset) => sum + asset.currentValue, 0),
+  })).filter((slice) => slice.value > 0);
 }
