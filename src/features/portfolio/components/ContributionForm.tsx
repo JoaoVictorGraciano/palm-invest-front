@@ -16,7 +16,9 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLab
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { AssetClassFilter } from '@/features/portfolio/components/AssetClassFilter';
 import { TickerCombobox } from '@/features/portfolio/components/TickerCombobox';
+import { useRememberedAssetFilter } from '@/features/portfolio/hooks/useRememberedAssetFilter';
 import { toast } from 'sonner';
 import { isPriceFarFromQuote, priceDeviation, useAssetQuote } from '@/features/portfolio/hooks/useAssetQuote';
 import { isFormError, useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
@@ -112,6 +114,9 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
       })),
     [transactions],
   );
+
+  // Filtro de classe da busca. Não define a classe gravada: essa vem do ativo escolhido.
+  const [classFilter, setClassFilter] = useRememberedAssetFilter();
 
   function handleSelectAsset(asset: AssetSuggestion | null) {
     setSelectedAsset(asset);
@@ -266,6 +271,13 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
           <Field data-invalid={!!form.formState.errors.ticker}>
             <FieldLabel htmlFor="ticker">Ativo</FieldLabel>
             <FieldContent>
+              <AssetClassFilter
+                size="xs"
+                label="Classe do ativo a buscar"
+                className="gap-1.5"
+                value={classFilter}
+                onChange={setClassFilter}
+              />
               <Controller
                 control={form.control}
                 name="ticker"
@@ -277,6 +289,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
                     selected={selectedAsset}
                     onSelect={handleSelectAsset}
                     ownedAssets={ownedAssets}
+                    assetClass={classFilter === 'ALL' ? undefined : classFilter}
                     invalid={!!form.formState.errors.ticker}
                   />
                 )}

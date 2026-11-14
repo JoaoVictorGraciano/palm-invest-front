@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { searchAssets } from '@/services';
+import type { AssetClass } from '@/types';
 
 /** Mínimo de caracteres para consultar os provedores. */
 export const MIN_SEARCH_LENGTH = 2;
@@ -19,18 +20,19 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 /**
- * Sugestões de ativos (Brapi + CoinGecko) para o texto digitado. Espera o
+ * Sugestões de ativos (Brapi + CoinGecko) para o texto digitado; com
+ * `assetClass`, só daquela classe e só do provedor dela. Espera o
  * usuário parar de digitar e guarda os resultados em cache, para não gastar
  * a cota pública dos provedores a cada tecla.
  */
-export function useAssetSearch(text: string) {
+export function useAssetSearch(text: string, assetClass?: AssetClass) {
   const term = text.trim().toUpperCase();
   const debouncedTerm = useDebouncedValue(term, DEBOUNCE_MS);
   const enabled = debouncedTerm.length >= MIN_SEARCH_LENGTH;
 
   const query = useQuery({
-    queryKey: ['asset-search', debouncedTerm],
-    queryFn: ({ signal }) => searchAssets(debouncedTerm, signal),
+    queryKey: ['asset-search', assetClass ?? 'ALL', debouncedTerm],
+    queryFn: ({ signal }) => searchAssets(debouncedTerm, signal, assetClass),
     enabled,
     staleTime: 5 * 60_000,
     retry: false,

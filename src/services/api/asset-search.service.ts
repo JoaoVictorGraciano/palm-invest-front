@@ -11,7 +11,7 @@
  * (`VITE_BRAPI_TOKEN`) é enviado quando configurado, apenas para usar a
  * cota da conta em vez da cota anônima.
  */
-import { ASSET_CLASS } from '@/types';
+import { ASSET_CLASS, isB3AssetClass } from '@/types';
 import type { AssetClass, B3AssetClass } from '@/types';
 
 const BRAPI_BASE_URL = 'https://brapi.dev/api';
@@ -20,6 +20,21 @@ const COINGECKO_BASE_URL = 'https://api.coingecko.com/api/v3';
 
 /** Quantas sugestões cada provedor contribui, no máximo. */
 const MAX_PER_PROVIDER = 6;
+
+/**
+ * Quantos resultados pedir à Brapi quando a busca é de uma classe só. O
+ * filtro `type` da Brapi separa ação, fundo e BDR, mas "fundo" mistura FII
+ * e ETF; por isso vem uma página maior, filtrada aqui pela classe.
+ */
+const BRAPI_FILTERED_PAGE_SIZE = 30;
+
+/** Valor do parâmetro `type` da Brapi (`/quote/list`) que contém cada classe. */
+const BRAPI_TYPE_BY_CLASS: Record<B3AssetClass, string> = {
+  [ASSET_CLASS.STOCK]: 'stock',
+  [ASSET_CLASS.FII]: 'fund',
+  [ASSET_CLASS.ETF]: 'fund',
+  [ASSET_CLASS.BDR]: 'bdr',
+};
 
 /** Formato aceito pela palm-invest-api em `assetSymbol` (até 20 caracteres, sem espaços). */
 const VALID_TICKER = /^[A-Z0-9]{1,20}$/;
@@ -113,10 +128,19 @@ export function classifyBrapiAsset(type: string | null | undefined, subType: str
   return ASSET_CLASS.STOCK;
 }
 
-export async function searchStocks(query: string, signal?: AbortSignal): Promise<AssetSuggestion[]> {
+/**
+ * Busca na Brapi. Com `assetClass`, pede só o tipo que contém a classe e
+ * devolve apenas os ativos dela.
+ */
+export async function searchStocks(
+  query: string,
+  signal?: AbortSignal,
+  assetClass?: B3AssetClass,
+): Promise<AssetSuggestion[]> {
   const url = new URL(`${BRAPI_BASE_URL}/quote/list`);
   url.searchParams.set('search', query);
-  url.searchParams.set('limit', String(MAX_PER_PROVIDER));
+  url.searchParams.set('limit', String(assetClass ? BRAPI_FILTERED_PAGE_SIZE : MAX_PER_PROVIDER));
+  if (assetClass) url.searchParams.set('type', BRAPI_TYPE_BY_CLASS[assetClass]);
   if (BRAPI_TOKEN) url.searchParams.set('token', BRAPI_TOKEN);
 
   const body = await getJson<BrapiListResponse>(url, signal);
@@ -126,7 +150,7 @@ export async function searchStocks(query: string, signal?: AbortSignal): Promise
       const ticker = (item.stock ?? '').trim().toUpperCase();
       return { ticker, name: item.name?.trim() || ticker, assetClass: classifyBrapiAsset(item.type, item.subType) };
     })
-    .filter((item) => VALID_TICKER.test(item.ticker))
+    .filter((item) => VALID_TICKER.test(item.ticker) && (!assetClass || item.assetClass === assetClass))
     .slice(0, MAX_PER_PROVIDER);
 }
 
@@ -199,15 +223,31 @@ export async function resolveCoinGeckoId(ticker: string): Promise<string | undef
 }
 
 /**
- * Busca nos dois provedores ao mesmo tempo e devolve as sugestões já
- * ordenadas (ver `sortByMatch`). Nunca lança por causa de um provedor: quem
- * falhar aparece em `failedProviders`.
+ * Busca os ativos e devolve as sugestões já ordenadas (ver `sortByMatch`).
+ *
+ * Sem `assetClass`, consulta os dois provedores ao mesmo tempo. Com
+ * `assetClass`, consulta só o provedor daquela classe (CoinGecko para
+ * cripto, Brapi para as demais) e devolve apenas ativos dela.
+ *
+ * Nunca lança por causa de um provedor: quem falhar aparece em
+ * `failedProviders`.
  */
-export async function searchAssets(query: string, signal?: AbortSignal): Promise<AssetSearchResult> {
+export async function searchAssets(
+  query: string,
+  signal?: AbortSignal,
+  assetClass?: AssetClass,
+): Promise<AssetSearchResult> {
   const term = query.trim();
   if (term === '') return { suggestions: [], failedProviders: [] };
 
-  const [stocks, cryptos] = await Promise.allSettled([searchStocks(term, signal), searchCryptos(term, signal)]);
+  const skipped: Promise<AssetSuggestion[]> = Promise.resolve([]);
+  const wantsB3 = !assetClass || isB3AssetClass(assetClass);
+  const wantsCrypto = !assetClass || !isB3AssetClass(assetClass);
+
+  const [stocks, cryptos] = await Promise.allSettled([
+    wantsB3 ? searchStocks(term, signal, assetClass && isB3AssetClass(assetClass) ? assetClass : undefined) : skipped,
+    wantsCrypto ? searchCryptos(term, signal) : skipped,
+  ]);
 
   const failedProviders: AssetSearchProvider[] = [];
   if (stocks.status === 'rejected') failedProviders.push('brapi');

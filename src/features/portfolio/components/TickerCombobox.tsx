@@ -34,6 +34,8 @@ interface TickerComboboxProps {
   onSelect: (asset: AssetSuggestion | null) => void;
   /** Ativos que já estão na carteira: aparecem como sugestão mesmo sem a busca externa. */
   ownedAssets?: AssetSuggestion[];
+  /** Quando presente, a busca e as sugestões ficam restritas a esta classe. */
+  assetClass?: AssetClass;
   invalid?: boolean;
   inputRef?: Ref<HTMLInputElement>;
   onBlur?: () => void;
@@ -44,23 +46,36 @@ interface TickerComboboxProps {
  * valor do campo é sempre um ativo escolhido na lista, nunca texto livre.
  * Digitar depois de escolher desfaz a escolha.
  */
-export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, inputRef, onBlur }: TickerComboboxProps) {
+export function TickerCombobox({
+  id,
+  selected,
+  onSelect,
+  ownedAssets,
+  assetClass,
+  invalid,
+  inputRef,
+  onBlur,
+}: TickerComboboxProps) {
   const listboxId = useId();
   const [text, setText] = useState(selected?.ticker ?? '');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
   const term = text.trim().toUpperCase();
-  const { suggestions, failedProviders, isSearching } = useAssetSearch(selected ? '' : text);
+  const { suggestions, failedProviders, isSearching } = useAssetSearch(selected ? '' : text, assetClass);
 
   const options = useMemo<TickerOption[]>(() => {
     if (term === '') return [];
 
-    const owned = (ownedAssets ?? []).filter((asset) => asset.ticker.includes(term));
+    const owned = (ownedAssets ?? []).filter(
+      (asset) => asset.ticker.includes(term) && (!assetClass || asset.assetClass === assetClass),
+    );
+    // Durante a troca de filtro ainda podem estar na tela os resultados da busca anterior.
+    const inClass = suggestions.filter((suggestion) => !assetClass || suggestion.assetClass === assetClass);
     const ownedKeys = new Set(owned.map(optionKey));
-    const foundKeys = new Set(suggestions.map(optionKey));
+    const foundKeys = new Set(inClass.map(optionKey));
 
-    const found = suggestions.map((suggestion) => ({ ...suggestion, owned: ownedKeys.has(optionKey(suggestion)) }));
+    const found = inClass.map((suggestion) => ({ ...suggestion, owned: ownedKeys.has(optionKey(suggestion)) }));
     // Ativos da carteira que a busca não devolveu (ex: símbolo antigo, ou provedor fora do ar).
     const ownedOnly = owned
       .filter((asset) => !foundKeys.has(optionKey(asset)))
@@ -75,7 +90,7 @@ export function TickerCombobox({ id, selected, onSelect, ownedAssets, invalid, i
       ...sortByMatch(term, [...found, ...ownedOnly.filter(providerIsDown)]),
       ...sortByMatch(term, ownedOnly.filter((asset) => !providerIsDown(asset))),
     ];
-  }, [ownedAssets, suggestions, failedProviders, term]);
+  }, [ownedAssets, suggestions, failedProviders, term, assetClass]);
 
   // A lista fica montada enquanto há texto e nenhuma escolha; perder o foco
   // só a esconde. Removê-la do DOM durante a troca de foco faz o diálogo

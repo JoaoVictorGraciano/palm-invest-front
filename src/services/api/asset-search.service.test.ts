@@ -178,6 +178,51 @@ describe('searchAssets', () => {
     expect(suggestions).toHaveLength(6);
   });
 
+  it('com classe de cripto, consulta só a CoinGecko', async () => {
+    const fetchMock = stubProviders({
+      coingeckoSearch: () => jsonResponse({ coins: [{ id: 'fff-coin', name: 'Fff', symbol: 'FFF', market_cap_rank: 9 }] }),
+    });
+
+    const result = await searchAssets('fff', undefined, 'CRYPTO');
+
+    expect(result).toEqual({ suggestions: [{ ticker: 'FFF', name: 'Fff', assetClass: 'CRYPTO' }], failedProviders: [] });
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).host)).toEqual(['api.coingecko.com']);
+  });
+
+  it('com classe da B3, consulta só a Brapi pelo tipo certo e devolve só a classe pedida', async () => {
+    const fetchMock = stubProviders({
+      brapi: () =>
+        jsonResponse({
+          stocks: [
+            { stock: 'MXRF11', name: 'MAXI RENDA', type: 'fund', subType: 'fii' },
+            { stock: 'BOVA11', name: 'ISHARES IBOVESPA', type: 'fund', subType: 'etf' },
+          ],
+        }),
+    });
+
+    const result = await searchAssets('11', undefined, 'ETF');
+
+    expect(result.suggestions).toEqual([{ ticker: 'BOVA11', name: 'ISHARES IBOVESPA', assetClass: 'ETF' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.host).toBe('brapi.dev');
+    expect(url.searchParams.get('type')).toBe('fund');
+  });
+
+  it('cada classe da B3 usa o tipo correspondente da Brapi', async () => {
+    const fetchMock = stubProviders({});
+
+    await searchAssets('x', undefined, 'STOCK');
+    await searchAssets('x', undefined, 'BDR');
+    await searchAssets('x', undefined, 'FII');
+
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).searchParams.get('type'))).toEqual([
+      'stock',
+      'bdr',
+      'fund',
+    ]);
+  });
+
   it('mantém as sugestões de um provedor quando o outro falha', async () => {
     stubProviders({
       brapi: () => jsonResponse({ message: 'fora do ar' }, 503),
