@@ -24,6 +24,7 @@ import { isPriceFarFromQuote, priceDeviation, useAssetQuote } from '@/features/p
 import { isFormError, useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getAvailableQuantity, getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
+import { describeTransactionTotal } from '@/features/portfolio/services/transaction-total';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
 import { parseValidationErrors } from '@/services';
@@ -130,6 +131,14 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
   // Cotação atual do ativo escolhido: referência para o preço por unidade digitado.
   const quote = useAssetQuote(selectedAsset);
   const typedPrice = Number(form.watch('pricePaid'));
+
+  // Conta do total, recalculada a cada tecla em quantidade, preço ou taxas.
+  const totalDescription = describeTransactionTotal({
+    type: transactionType,
+    quantity: Number(form.watch('quantity')),
+    price: typedPrice,
+    fee: Number(form.watch('fee')),
+  });
   const deviation = priceDeviation(typedPrice, quote.price);
   const isPriceFar = isPriceFarFromQuote(typedPrice, quote.price);
 
@@ -347,6 +356,13 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
               <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
             </FieldContent>
           </Field>
+
+          {totalDescription && (
+            <div className="rounded-lg border bg-muted/40 p-2.5 text-sm" aria-live="polite">
+              <p className="text-muted-foreground">{isSell ? 'Total da venda' : 'Total da compra'}</p>
+              <p className="font-medium tabular-nums">{totalDescription}</p>
+            </div>
+          )}
 
           <Field data-invalid={!!form.formState.errors.observation}>
             <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>

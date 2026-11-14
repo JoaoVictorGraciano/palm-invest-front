@@ -243,6 +243,44 @@ describe('ContributionForm: preço por unidade e cotação atual', () => {
   });
 });
 
+describe('ContributionForm: total da operação em tempo real', () => {
+  it('mostra a conta do total da compra e atualiza a cada mudança', async () => {
+    stubNetwork();
+    const { user } = renderForm();
+
+    expect(screen.queryByText('Total da compra')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Qtd comprada'), '40');
+    await user.type(screen.getByLabelText('Preço por unidade'), '15');
+    expect(screen.getByText('Total da compra').parentElement).toHaveTextContent(
+      '40 × R$ 15,00 + taxas R$ 0,00 = R$ 600,00',
+    );
+
+    const fee = screen.getByLabelText('Taxas e Custos (R$)');
+    await user.clear(fee);
+    await user.type(fee, '2.5');
+    expect(screen.getByText('Total da compra').parentElement).toHaveTextContent(
+      '40 × R$ 15,00 + taxas R$ 2,50 = R$ 602,50',
+    );
+  });
+
+  it('na venda, as taxas são descontadas do total', async () => {
+    stubNetwork();
+    const { user } = renderForm();
+
+    await user.click(screen.getByRole('radio', { name: 'Venda' }));
+    await user.type(screen.getByLabelText('Qtd vendida'), '0.5');
+    await user.type(screen.getByLabelText('Preço por unidade'), '1000');
+    const fee = screen.getByLabelText('Taxas e Custos (R$)');
+    await user.clear(fee);
+    await user.type(fee, '10');
+
+    expect(screen.getByText('Total da venda').parentElement).toHaveTextContent(
+      '0,5 × R$ 1.000,00 − taxas R$ 10,00 = R$ 490,00',
+    );
+  });
+});
+
 describe('ContributionForm: filtro de classe', () => {
   const MIXED_FUNDS = {
     stocks: [
