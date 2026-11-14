@@ -1,7 +1,6 @@
-import { isStock } from '@/types';
 import type { Asset } from '@/types';
 import { cn } from '@/lib/utils';
-import { formatCurrency, formatPercentage } from '@/utils';
+import { ASSET_CLASS_LABEL, formatCurrency, formatPercentage } from '@/utils';
 import { DeleteAssetButton } from '@/features/portfolio/components/DeleteAssetButton';
 
 interface AssetTableProps {
@@ -47,7 +46,7 @@ export function AssetTable({ assets }: AssetTableProps) {
                 </td>
                 <td className="px-4 py-3">
                   <span className="rounded-full border px-2 py-0.5 text-xs text-muted-foreground">
-                    {isStock(asset) ? 'Ação' : 'Cripto'}
+                    {ASSET_CLASS_LABEL[asset.assetClass]}
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">{asset.quantity}</td>

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchCryptoQuotes, fetchStockQuotes } from '@/services';
 import type { AssetSuggestion } from '@/services';
-import { ASSET_CLASS } from '@/types';
+import { isB3AssetClass } from '@/types';
 
 /** A partir de qual diferença relativa o preço digitado é considerado fora do esperado (50%). */
 export const PRICE_DEVIATION_THRESHOLD = 0.5;
@@ -22,7 +22,7 @@ export function isPriceFarFromQuote(price: number, quote: number | null | undefi
 
 async function fetchQuotePrice(asset: AssetSuggestion): Promise<number | null> {
   const { quotes } =
-    asset.assetClass === ASSET_CLASS.STOCK
+    isB3AssetClass(asset.assetClass)
       ? await fetchStockQuotes([asset.ticker])
       : await fetchCryptoQuotes([asset.ticker]);
 

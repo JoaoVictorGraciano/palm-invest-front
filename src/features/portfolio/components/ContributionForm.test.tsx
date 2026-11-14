@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { ContributionForm } from '@/features/portfolio/components/ContributionForm';
@@ -240,6 +240,160 @@ describe('ContributionForm: preço por unidade e cotação atual', () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
     expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+});
+
+describe('ContributionForm: total da operação em tempo real', () => {
+  it('mostra a conta do total da compra e atualiza a cada mudança', async () => {
+    stubNetwork();
+    const { user } = renderForm();
+
+    expect(screen.queryByText('Total da compra')).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Qtd comprada'), '40');
+    await user.type(screen.getByLabelText('Preço por unidade'), '15');
+    expect(screen.getByText('Total da compra').parentElement).toHaveTextContent(
+      '40 × R$ 15,00 + taxas R$ 0,00 = R$ 600,00',
+    );
+
+    const fee = screen.getByLabelText('Taxas e Custos (R$)');
+    await user.clear(fee);
+    await user.type(fee, '2.5');
+    expect(screen.getByText('Total da compra').parentElement).toHaveTextContent(
+      '40 × R$ 15,00 + taxas R$ 2,50 = R$ 602,50',
+    );
+  });
+
+  it('na venda, as taxas são descontadas do total', async () => {
+    stubNetwork();
+    const { user } = renderForm();
+
+    await user.click(screen.getByRole('radio', { name: 'Venda' }));
+    await user.type(screen.getByLabelText('Qtd vendida'), '0.5');
+    await user.type(screen.getByLabelText('Preço por unidade'), '1000');
+    const fee = screen.getByLabelText('Taxas e Custos (R$)');
+    await user.clear(fee);
+    await user.type(fee, '10');
+
+    expect(screen.getByText('Total da venda').parentElement).toHaveTextContent(
+      '0,5 × R$ 1.000,00 − taxas R$ 10,00 = R$ 490,00',
+    );
+  });
+});
+
+describe('ContributionForm: filtro de classe', () => {
+  const MIXED_FUNDS = {
+    stocks: [
+      { stock: 'BOVA11', name: 'ISHARES IBOVESPA', type: 'fund', subType: 'etf' },
+      { stock: 'MXRF11', name: 'MAXI RENDA', type: 'fund', subType: 'fii' },
+    ],
+  };
+
+  function searchUrls(fetchMock: ReturnType<typeof stubNetwork>, host: string): URL[] {
+    return fetchMock.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .filter((url) => url.host === host && (url.pathname.endsWith('/quote/list') || url.pathname.endsWith('/search')));
+  }
+
+  function classButton(name: string) {
+    return screen.getByRole('button', { name });
+  }
+
+  it('mostra os botões de classe, com "Todos" marcado por padrão', () => {
+    stubNetwork();
+    renderForm();
+
+    const names = ['Todos', 'Ações', 'FIIs', 'ETFs', 'BDRs', 'Cripto'];
+    expect(names.map((name) => classButton(name).getAttribute('aria-pressed'))).toEqual([
+      'true',
+      'false',
+      'false',
+      'false',
+      'false',
+      'false',
+    ]);
+  });
+
+  it('em "Todos", consulta a Brapi e a CoinGecko', async () => {
+    const fetchMock = stubNetwork();
+    const { user } = renderForm();
+
+    await user.type(screen.getByLabelText('Ativo'), 'petr');
+    await screen.findByRole('option', { name: /PETR4/ });
+
+    expect(searchUrls(fetchMock, 'brapi.dev')).toHaveLength(1);
+    expect(searchUrls(fetchMock, 'brapi.dev')[0].searchParams.has('type')).toBe(false);
+    expect(searchUrls(fetchMock, 'api.coingecko.com')).toHaveLength(1);
+  });
+
+  it('em "Cripto", consulta só a CoinGecko', async () => {
+    const fetchMock = stubNetwork();
+    const { user } = renderForm();
+
+    await user.click(classButton('Cripto'));
+    await user.type(screen.getByLabelText('Ativo'), 'bt');
+    await screen.findByRole('option', { name: /BTC/ });
+
+    expect(optionTickers()).toEqual(['BTC']);
+    expect(searchUrls(fetchMock, 'api.coingecko.com')).toHaveLength(1);
+    expect(searchUrls(fetchMock, 'brapi.dev')).toHaveLength(0);
+  });
+
+  it('em "FIIs", consulta só a Brapi (type=fund) e mostra só FIIs', async () => {
+    const fetchMock = stubNetwork({ stockSearch: () => jsonResponse(MIXED_FUNDS) });
+    const { user } = renderForm();
+
+    await user.click(classButton('FIIs'));
+    await user.type(screen.getByLabelText('Ativo'), '11');
+    await screen.findByRole('option', { name: /MXRF11/ });
+
+    expect(optionTickers()).toEqual(['MXRF11']);
+    expect(searchUrls(fetchMock, 'brapi.dev')[0].searchParams.get('type')).toBe('fund');
+    expect(searchUrls(fetchMock, 'api.coingecko.com')).toHaveLength(0);
+  });
+
+  it('o filtro também vale para as sugestões da carteira', async () => {
+    stubNetwork({
+      transactions: [ownedBuy('BITCOIN', 'CRYPTO')],
+      stockSearch: () => jsonResponse({ stocks: [] }),
+    });
+    const { user } = renderForm();
+
+    await user.click(classButton('Ações'));
+    await user.type(screen.getByLabelText('Ativo'), 'bit');
+
+    expect(await screen.findByText('Nenhum ativo encontrado para "BIT".')).toBeInTheDocument();
+    expect(screen.queryByRole('option')).not.toBeInTheDocument();
+  });
+
+  it('a classe salva vem do ativo escolhido, não do botão', async () => {
+    const fetchMock = stubNetwork({ stockSearch: () => jsonResponse(MIXED_FUNDS) });
+    const { user, onSuccess } = renderForm();
+
+    // Escolhe o ETF com "Todos" e só depois troca o botão para "FIIs".
+    await user.type(screen.getByLabelText('Ativo'), '11');
+    await user.click(await screen.findByRole('option', { name: /BOVA11/ }));
+    await user.click(classButton('FIIs'));
+    await fillRest(user);
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    expect(JSON.parse(String(postCalls(fetchMock)[0][1]?.body))).toMatchObject({
+      assetSymbol: 'BOVA11',
+      assetClass: 'ETF',
+    });
+  });
+
+  it('lembra a última classe usada ao abrir o formulário de novo', async () => {
+    stubNetwork();
+    const first = renderForm();
+    await first.user.click(classButton('BDRs'));
+    cleanup();
+
+    renderForm();
+
+    expect(classButton('BDRs')).toHaveAttribute('aria-pressed', 'true');
+    expect(classButton('Todos')).toHaveAttribute('aria-pressed', 'false');
   });
 });
 

@@ -1,4 +1,4 @@
-import { ASSET_CLASS } from '@/types';
+import { isB3AssetClass } from '@/types';
 import type { Asset, Portfolio } from '@/types';
 import { calculateAssetProfit, calculatePortfolioTotals } from '@/utils';
 import { fetchCryptoQuotes, fetchStockQuotes, type Quote, type QuoteProviderError } from '@/services';
@@ -30,8 +30,9 @@ export interface HoldingQuotes {
  * o custo médio como preço atual.
  */
 export async function getQuotesForHoldings(holdings: AssetHolding[]): Promise<HoldingQuotes> {
-  const stockTickers = holdings.filter((holding) => holding.assetClass === ASSET_CLASS.STOCK).map((holding) => holding.ticker);
-  const cryptoTickers = holdings.filter((holding) => holding.assetClass === ASSET_CLASS.CRYPTO).map((holding) => holding.ticker);
+  // Ações, FIIs, ETFs e BDRs são cotados pela Brapi; criptomoedas, pela CoinGecko.
+  const stockTickers = holdings.filter((holding) => isB3AssetClass(holding.assetClass)).map((holding) => holding.ticker);
+  const cryptoTickers = holdings.filter((holding) => !isB3AssetClass(holding.assetClass)).map((holding) => holding.ticker);
 
   const [stockResult, cryptoResult] = await Promise.all([
     fetchStockQuotes(stockTickers),

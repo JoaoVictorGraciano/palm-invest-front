@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { resolveCoinGeckoId, searchAssets } from '@/services/api/asset-search.service';
+import { classifyBrapiAsset, resolveCoinGeckoId, searchAssets } from '@/services/api/asset-search.service';
 import { fetchCryptoQuotes } from '@/services/api/quotes.service';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -72,6 +72,41 @@ describe('searchAssets', () => {
     expect(suggestions).toEqual([{ ticker: 'AAA', name: 'Original', assetClass: 'CRYPTO' }]);
   });
 
+  it('classifica os ativos da Brapi pelo type e subType que ela devolve', async () => {
+    stubProviders({
+      brapi: () =>
+        jsonResponse({
+          stocks: [
+            { stock: 'PETR4', name: 'PETROBRAS', type: 'stock', subType: 'stock' },
+            { stock: 'TAEE11', name: 'TAESA', type: 'stock', subType: 'unit' },
+            { stock: 'MXRF11', name: 'MAXI RENDA', type: 'fund', subType: 'fii' },
+            { stock: 'BOVA11', name: 'ISHARES IBOVESPA', type: 'fund', subType: 'etf' },
+            { stock: 'AAPL34', name: 'APPLE', type: 'bdr', subType: 'bdr' },
+            { stock: 'SNAG11', name: 'SUNO AGRO', type: 'fund', subType: 'fi-agro' },
+          ],
+        }),
+    });
+
+    const { suggestions } = await searchAssets('1');
+
+    expect(Object.fromEntries(suggestions.map((suggestion) => [suggestion.ticker, suggestion.assetClass]))).toEqual({
+      PETR4: 'STOCK',
+      TAEE11: 'STOCK',
+      MXRF11: 'FII',
+      BOVA11: 'ETF',
+      AAPL34: 'BDR',
+      SNAG11: 'FII',
+    });
+  });
+
+  it('classifyBrapiAsset: fundos sem subType conhecido ficam como FII; sem tipo, como ação', () => {
+    expect(classifyBrapiAsset('fund', 'fi-infra')).toBe('FII');
+    expect(classifyBrapiAsset('fund', 'fip')).toBe('FII');
+    expect(classifyBrapiAsset('fund', null)).toBe('FII');
+    expect(classifyBrapiAsset('FUND', 'ETF')).toBe('ETF');
+    expect(classifyBrapiAsset(undefined, undefined)).toBe('STOCK');
+  });
+
   it('ordena por símbolo igual, depois símbolo ou nome que começa com o texto, depois o resto', async () => {
     stubProviders({
       brapi: () =>
@@ -141,6 +176,51 @@ describe('searchAssets', () => {
 
     expect(suggestions[0]).toEqual({ ticker: 'EEE', name: 'Pequena', assetClass: 'CRYPTO' });
     expect(suggestions).toHaveLength(6);
+  });
+
+  it('com classe de cripto, consulta só a CoinGecko', async () => {
+    const fetchMock = stubProviders({
+      coingeckoSearch: () => jsonResponse({ coins: [{ id: 'fff-coin', name: 'Fff', symbol: 'FFF', market_cap_rank: 9 }] }),
+    });
+
+    const result = await searchAssets('fff', undefined, 'CRYPTO');
+
+    expect(result).toEqual({ suggestions: [{ ticker: 'FFF', name: 'Fff', assetClass: 'CRYPTO' }], failedProviders: [] });
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).host)).toEqual(['api.coingecko.com']);
+  });
+
+  it('com classe da B3, consulta só a Brapi pelo tipo certo e devolve só a classe pedida', async () => {
+    const fetchMock = stubProviders({
+      brapi: () =>
+        jsonResponse({
+          stocks: [
+            { stock: 'MXRF11', name: 'MAXI RENDA', type: 'fund', subType: 'fii' },
+            { stock: 'BOVA11', name: 'ISHARES IBOVESPA', type: 'fund', subType: 'etf' },
+          ],
+        }),
+    });
+
+    const result = await searchAssets('11', undefined, 'ETF');
+
+    expect(result.suggestions).toEqual([{ ticker: 'BOVA11', name: 'ISHARES IBOVESPA', assetClass: 'ETF' }]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(url.host).toBe('brapi.dev');
+    expect(url.searchParams.get('type')).toBe('fund');
+  });
+
+  it('cada classe da B3 usa o tipo correspondente da Brapi', async () => {
+    const fetchMock = stubProviders({});
+
+    await searchAssets('x', undefined, 'STOCK');
+    await searchAssets('x', undefined, 'BDR');
+    await searchAssets('x', undefined, 'FII');
+
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).searchParams.get('type'))).toEqual([
+      'stock',
+      'bdr',
+      'fund',
+    ]);
   });
 
   it('mantém as sugestões de um provedor quando o outro falha', async () => {

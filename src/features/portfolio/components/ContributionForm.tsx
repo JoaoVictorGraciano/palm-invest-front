@@ -16,12 +16,15 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLab
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { AssetClassFilter } from '@/features/portfolio/components/AssetClassFilter';
 import { TickerCombobox } from '@/features/portfolio/components/TickerCombobox';
+import { useRememberedAssetFilter } from '@/features/portfolio/hooks/useRememberedAssetFilter';
 import { toast } from 'sonner';
 import { isPriceFarFromQuote, priceDeviation, useAssetQuote } from '@/features/portfolio/hooks/useAssetQuote';
 import { isFormError, useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getAvailableQuantity, getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
+import { describeTransactionTotal } from '@/features/portfolio/services/transaction-total';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
 import { parseValidationErrors } from '@/services';
@@ -34,7 +37,7 @@ const contributionFormSchema = z.object({
   transactionDate: z.string().min(1, 'Informe a data e hora.'),
   // Só é preenchido quando o usuário escolhe um ativo na busca (ver `TickerCombobox`).
   ticker: z.string().min(1, 'Escolha um ativo na lista de sugestões.'),
-  assetClass: z.enum([ASSET_CLASS.STOCK, ASSET_CLASS.CRYPTO]),
+  assetClass: z.enum(Object.values(ASSET_CLASS)),
   quantity: z.coerce.number().positive('Informe uma quantidade maior que zero.'),
   pricePaid: z.coerce.number().positive('Informe um preço maior que zero.'),
   broker: z.string().trim().min(1, 'Informe a corretora (Ex: CLEAR, XP).'),
@@ -113,6 +116,9 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
     [transactions],
   );
 
+  // Filtro de classe da busca. Não define a classe gravada: essa vem do ativo escolhido.
+  const [classFilter, setClassFilter] = useRememberedAssetFilter();
+
   function handleSelectAsset(asset: AssetSuggestion | null) {
     setSelectedAsset(asset);
     form.setValue('ticker', asset?.ticker ?? '', { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
@@ -125,6 +131,14 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
   // Cotação atual do ativo escolhido: referência para o preço por unidade digitado.
   const quote = useAssetQuote(selectedAsset);
   const typedPrice = Number(form.watch('pricePaid'));
+
+  // Conta do total, recalculada a cada tecla em quantidade, preço ou taxas.
+  const totalDescription = describeTransactionTotal({
+    type: transactionType,
+    quantity: Number(form.watch('quantity')),
+    price: typedPrice,
+    fee: Number(form.watch('fee')),
+  });
   const deviation = priceDeviation(typedPrice, quote.price);
   const isPriceFar = isPriceFarFromQuote(typedPrice, quote.price);
 
@@ -266,6 +280,13 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
           <Field data-invalid={!!form.formState.errors.ticker}>
             <FieldLabel htmlFor="ticker">Ativo</FieldLabel>
             <FieldContent>
+              <AssetClassFilter
+                size="xs"
+                label="Classe do ativo a buscar"
+                className="gap-1.5"
+                value={classFilter}
+                onChange={setClassFilter}
+              />
               <Controller
                 control={form.control}
                 name="ticker"
@@ -277,6 +298,7 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
                     selected={selectedAsset}
                     onSelect={handleSelectAsset}
                     ownedAssets={ownedAssets}
+                    assetClass={classFilter === 'ALL' ? undefined : classFilter}
                     invalid={!!form.formState.errors.ticker}
                   />
                 )}
@@ -334,6 +356,13 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
               <FieldError errors={form.formState.errors.fee ? [form.formState.errors.fee] : undefined} />
             </FieldContent>
           </Field>
+
+          {totalDescription && (
+            <div className="rounded-lg border bg-muted/40 p-2.5 text-sm" aria-live="polite">
+              <p className="text-muted-foreground">{isSell ? 'Total da venda' : 'Total da compra'}</p>
+              <p className="font-medium tabular-nums">{totalDescription}</p>
+            </div>
+          )}
 
           <Field data-invalid={!!form.formState.errors.observation}>
             <FieldLabel htmlFor="observation">Observações (Opcional)</FieldLabel>

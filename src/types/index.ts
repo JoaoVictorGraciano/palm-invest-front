@@ -34,10 +34,22 @@ export interface AppError {
  */
 export const ASSET_CLASS = {
   STOCK: 'STOCK',
+  FII: 'FII',
+  ETF: 'ETF',
+  BDR: 'BDR',
   CRYPTO: 'CRYPTO',
 } as const;
 
 export type AssetClass = (typeof ASSET_CLASS)[keyof typeof ASSET_CLASS];
+
+/** Classes negociadas na B3 (cotadas pela Brapi): ações, FIIs, ETFs e BDRs. */
+export const B3_ASSET_CLASSES = [ASSET_CLASS.STOCK, ASSET_CLASS.FII, ASSET_CLASS.ETF, ASSET_CLASS.BDR] as const;
+
+export type B3AssetClass = (typeof B3_ASSET_CLASSES)[number];
+
+export function isB3AssetClass(assetClass: AssetClass): assetClass is B3AssetClass {
+  return assetClass !== ASSET_CLASS.CRYPTO;
+}
 
 /**
  * Métricas de rentabilidade de uma posição, derivadas de `quantity`,
@@ -82,10 +94,10 @@ export interface BaseAsset extends AssetProfit {
 }
 
 /**
- * Ativo do tipo Ação (mercado tradicional de renda variável).
+ * Ativo negociado em bolsa (B3): ação, FII, ETF ou BDR.
  */
-export interface Stock extends BaseAsset {
-  assetClass: typeof ASSET_CLASS.STOCK;
+export interface B3Asset extends BaseAsset {
+  assetClass: B3AssetClass;
   /** Bolsa/mercado onde o ativo é negociado (ex: "B3", "NASDAQ"). */
   exchange: string;
   /** Setor de atuação da empresa (ex: "Financeiro", "Energia"). */
@@ -107,9 +119,9 @@ export interface Crypto extends BaseAsset {
 
 /**
  * Union discriminado de todos os ativos suportados pela carteira.
- * Usar `isStock`/`isCrypto` (ou checar `assetClass`) para estreitar o tipo.
+ * Usar `isB3Asset`/`isCrypto` (ou checar `assetClass`) para estreitar o tipo.
  */
-export type Asset = Stock | Crypto;
+export type Asset = B3Asset | Crypto;
 
 /**
  * Carteira de investimentos: coleção de ativos com totais consolidados.
@@ -130,9 +142,9 @@ export interface Portfolio {
   updatedAt: string;
 }
 
-/** Type guard: estreita `Asset` para `Stock`. */
-export function isStock(asset: Asset): asset is Stock {
-  return asset.assetClass === ASSET_CLASS.STOCK;
+/** Type guard: estreita `Asset` para `B3Asset` (ação, FII, ETF ou BDR). */
+export function isB3Asset(asset: Asset): asset is B3Asset {
+  return isB3AssetClass(asset.assetClass);
 }
 
 /** Type guard: estreita `Asset` para `Crypto`. */
