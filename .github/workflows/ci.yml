@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# O workflow só lê o código: não publica nada e não usa segredos.
+permissions:
+  contents: read
+
+# Um push novo no mesmo PR/branch cancela a execução anterior.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Lint, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Baixar o código
+        uses: actions/checkout@v7
+
+      # Node 24 (LTS): é a versão usada no desenvolvimento e atende ao que as
+      # dependências exigem (o jsdom pede ^22.22.2, ^24.15.0 ou >=26).
+      - name: Configurar o Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      # Os testes simulam o fetch e usam um VITE_API_URL fictício definido em
+      # vite.config.ts; nenhuma chamada real sai daqui.
+      - name: Testes
+        run: npm test
+
+      # O build não precisa de VITE_API_URL nem de VITE_BRAPI_TOKEN: as duas
+      # variáveis só são lidas quando o app roda no navegador.
+      - name: Build
+        run: npm run build
