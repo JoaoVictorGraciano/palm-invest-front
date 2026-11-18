@@ -1,8 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
+import { toast } from 'sonner';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HomePage } from '@/features/home/HomePage';
+import { describeAssetDeletion } from '@/features/portfolio/hooks/useDeleteAsset';
 import { PortfolioPage } from '@/features/portfolio/PortfolioPage';
 import { sumNetByTicker } from '@/features/proventos/hooks/useProventosByTicker';
 import { buy, stubProventosApi } from '@/features/proventos/test/fake-proventos-api';
@@ -160,5 +163,45 @@ describe('Dashboard com proventos', () => {
     expect(card('Rentabilidade com proventos')).toBe(
       'Rentabilidade com proventos+15,75%Valorização +5,00% + proventos 10,75% (R$ 31,50)',
     );
+  });
+});
+
+describe('Excluir ativo com proventos', () => {
+  it('describeAssetDeletion conta os proventos apagados junto', () => {
+    expect(describeAssetDeletion({ ticker: 'PETR4', deleted: 3, deletedProventos: 2 })).toBe(
+      'PETR4 removido, junto com 2 proventos.',
+    );
+    expect(describeAssetDeletion({ ticker: 'PETR4', deleted: 3, deletedProventos: 1 })).toBe(
+      'PETR4 removido, junto com 1 provento.',
+    );
+    expect(describeAssetDeletion({ ticker: 'PETR4', deleted: 3, deletedProventos: 0 })).toBe(
+      'PETR4 foi removido da carteira.',
+    );
+  });
+
+  it('o aviso diz que os proventos também serão apagados e o toast conta quantos foram', async () => {
+    const { callsTo } = stubProventosApi({ transactions: TRANSACTIONS, proventos: PROVENTOS, quotes: QUOTES });
+    const user = userEvent.setup();
+    renderWithProviders(<PortfolioPage />);
+
+    await user.click(await screen.findByRole('button', { name: 'Remover PETR4 da carteira' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(
+      'Isso apaga permanentemente todo o histórico de transações de PETR4 e também todos os proventos registrados dele.',
+    );
+
+    const proventosCallsBefore = callsTo('GET', '/api/proventos').length;
+    await user.click(within(dialog).getByRole('button', { name: 'Remover' }));
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Ativo removido', {
+        description: 'PETR4 removido, junto com 2 proventos.',
+      }),
+    );
+    expect(callsTo('DELETE', '/api/transactions')).toHaveLength(1);
+    // Os proventos são recarregados: a coluna e os totais não mostram mais os de PETR4.
+    await waitFor(() => expect(callsTo('GET', '/api/proventos').length).toBeGreaterThan(proventosCallsBefore));
+    await waitFor(() => expect(screen.queryByText('PETR4')).not.toBeInTheDocument());
+    expect(card('Proventos recebidos')).toContain('R$ 8,00');
   });
 });

@@ -96,21 +96,27 @@ export interface AssetDeletionResult {
   ticker: string;
   /** Quantas transações foram apagadas. */
   deleted: number;
+  /** Quantos proventos do ativo foram apagados junto. */
+  deletedProventos: number;
 }
 
 /**
- * Remove um ativo da carteira apagando todas as suas transações em uma única
- * chamada (`DELETE /api/transactions?assetSymbol=X`), atômica no servidor.
- * Lança `HttpError` 404 quando o ativo não tem nenhuma transação.
+ * Remove um ativo da carteira apagando todas as suas transações e todos os
+ * seus proventos em uma única chamada (`DELETE /api/transactions?assetSymbol=X`),
+ * atômica no servidor. Lança `HttpError` 404 quando não havia nem transação
+ * nem provento do ativo.
  */
 export async function deleteAssetTransactions(ticker: string): Promise<AssetDeletionResult> {
   const normalizedTicker = ticker.trim().toUpperCase();
-  const response = await httpClient.delete<{ assetSymbol?: string; excluidas?: number } | undefined>(
+  const response = await httpClient.delete<
+    { assetSymbol?: string; excluidas?: number; proventosExcluidos?: number } | undefined
+  >(
     `${TRANSACTIONS_PATH}?assetSymbol=${encodeURIComponent(normalizedTicker)}`,
   );
 
   return {
     ticker: response?.assetSymbol ?? normalizedTicker,
     deleted: Number(response?.excluidas ?? 0),
+    deletedProventos: Number(response?.proventosExcluidos ?? 0),
   };
 }
