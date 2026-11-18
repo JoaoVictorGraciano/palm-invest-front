@@ -9,7 +9,8 @@
  *   `setUnauthorizedHandler` (a sessão é encerrada pela camada de auth).
  *
  * Serviços de domínio devem consumir este client em vez de chamar `fetch`
- * diretamente. Integrações com provedores externos (cotações) não o usam.
+ * diretamente. Busca de ativos e cotações também passam por aqui: a API é
+ * quem fala com a Brapi e a CoinGecko.
  */
 import { tokenStorage } from '@/lib/token-storage';
 

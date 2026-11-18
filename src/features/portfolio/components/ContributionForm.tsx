@@ -28,7 +28,8 @@ import { describeTransactionTotal } from '@/features/portfolio/services/transact
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
 import { parseValidationErrors } from '@/services';
-import type { AssetSuggestion, HttpError } from '@/services';
+import type { HttpError } from '@/services';
+import type { AssetSuggestion } from '@/features/portfolio/services/asset-search.api';
 import { ASSET_CLASS } from '@/types';
 import { formatCurrency } from '@/utils';
 

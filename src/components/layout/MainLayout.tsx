@@ -56,6 +56,20 @@ export function MainLayout() {
       <main className="flex-1">
         <Outlet />
       </main>
+      {/* Atribuição exigida pelos termos de uso da API gratuita da CoinGecko. */}
+      <footer className="border-t">
+        <div className="mx-auto max-w-5xl px-4 py-4 text-xs text-muted-foreground">
+          Dados de cripto:{' '}
+          <a
+            href="https://www.coingecko.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-4 hover:text-foreground"
+          >
+            CoinGecko
+          </a>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -43,6 +43,19 @@ describe('MainLayout', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://api.test/auth/me');
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer token-ficticio');
+  });
+
+  it('mostra no rodapé a atribuição da CoinGecko, com link para coingecko.com', () => {
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 500 })));
+
+    renderLayout();
+
+    const footer = screen.getByRole('contentinfo');
+    expect(footer).toHaveTextContent('Dados de cripto: CoinGecko');
+    const link = within(footer).getByRole('link', { name: 'CoinGecko' });
+    expect(link).toHaveAttribute('href', 'https://www.coingecko.com');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
   it('continua utilizável se /auth/me falhar: sem nome, mas com o botão Sair', async () => {

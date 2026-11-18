@@ -1,7 +1,7 @@
-import { isB3AssetClass } from '@/types';
 import type { Asset, Portfolio } from '@/types';
 import { calculateAssetProfit, calculatePortfolioTotals } from '@/utils';
-import { fetchCryptoQuotes, fetchStockQuotes, type Quote, type QuoteProviderError } from '@/services';
+import { fetchQuotes } from '@/features/portfolio/services/quotes.api';
+import type { Quote, QuotesResult } from '@/features/portfolio/services/quotes.api';
 import type { AssetHolding } from '@/features/portfolio/types';
 
 function buildAsset(holding: AssetHolding, quotes: Quote[], updatedAt: string): Asset {
@@ -19,30 +19,16 @@ function buildAsset(holding: AssetHolding, quotes: Quote[], updatedAt: string): 
   } as Asset;
 }
 
-export interface HoldingQuotes {
-  quotes: Quote[];
-  failures: QuoteProviderError[];
-}
+export type HoldingQuotes = QuotesResult;
 
 /**
- * Busca as cotações das posições nos provedores externos. Nunca lança por
- * causa de um ativo: falhas individuais voltam em `failures` e o ativo usa
- * o custo médio como preço atual.
+ * Busca as cotações de todas as posições em uma única chamada à API
+ * (`GET /api/quotes`). Nunca lança por causa de um ativo: símbolos sem
+ * cotação voltam em `failures` e usam o custo médio como preço atual; com
+ * as cotações indisponíveis (`unavailable`), todos usam o custo médio.
  */
 export async function getQuotesForHoldings(holdings: AssetHolding[]): Promise<HoldingQuotes> {
-  // Ações, FIIs, ETFs e BDRs são cotados pela Brapi; criptomoedas, pela CoinGecko.
-  const stockTickers = holdings.filter((holding) => isB3AssetClass(holding.assetClass)).map((holding) => holding.ticker);
-  const cryptoTickers = holdings.filter((holding) => !isB3AssetClass(holding.assetClass)).map((holding) => holding.ticker);
-
-  const [stockResult, cryptoResult] = await Promise.all([
-    fetchStockQuotes(stockTickers),
-    fetchCryptoQuotes(cryptoTickers),
-  ]);
-
-  return {
-    quotes: [...stockResult.quotes, ...cryptoResult.quotes],
-    failures: [...stockResult.errors, ...cryptoResult.errors],
-  };
+  return fetchQuotes(holdings.map((holding) => holding.ticker));
 }
 
 /** Monta a carteira consolidada a partir das posições e das cotações disponíveis. */
