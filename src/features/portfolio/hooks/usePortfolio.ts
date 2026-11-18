@@ -4,30 +4,41 @@ import { toast } from 'sonner';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
 import { buildPortfolio, getQuotesForHoldings } from '@/features/portfolio/services/portfolio.service';
-import type { QuoteProviderError } from '@/services';
+import type { HoldingQuotes } from '@/features/portfolio/services/portfolio.service';
 
 /** Cotações são atualizadas a cada minuto enquanto a tela estiver aberta. */
 const REFRESH_INTERVAL_MS = 60_000;
 
-function notifyFailures(failures: QuoteProviderError[]) {
-  const affectedTickers = failures.map((failure) => failure.ticker).filter(Boolean).join(', ');
+/** Identifica um resultado de cotações, para não repetir o mesmo aviso a cada atualização. */
+function failureSignature({ failures, unavailable }: HoldingQuotes): string {
+  if (unavailable) return 'indisponivel';
+  return failures.map((failure) => failure.ticker).sort().join(',');
+}
 
+function notifyFailures({ failures, unavailable }: HoldingQuotes) {
+  if (unavailable) {
+    toast.error('Cotações indisponíveis no momento', {
+      description: 'Exibindo o custo médio como preço atual. Tentaremos de novo em instantes.',
+    });
+    return;
+  }
+
+  const affectedTickers = failures.map((failure) => failure.ticker).join(', ');
   toast.error('Algumas cotações não puderam ser atualizadas', {
-    description: affectedTickers
-      ? `Exibindo o último valor conhecido para: ${affectedTickers}.`
-      : 'Exibindo os últimos valores conhecidos.',
+    description: `Usando o custo médio como preço atual de: ${affectedTickers}.`,
   });
 }
 
 /**
- * Monta a carteira a partir das transações da API (`useTransactions`) e das
- * cotações dos provedores externos.
+ * Monta a carteira a partir das transações (`useTransactions`) e das
+ * cotações, ambas vindas da palm-invest-api.
  *
  * - Se as transações não puderem ser carregadas, `isError` fica `true` e
  *   não existe carteira: a tela mostra o erro em vez de uma carteira vazia.
- * - Cotações nunca derrubam a carteira: um ativo sem cotação usa o custo
- *   médio como preço atual e a falha é notificada com um toast
- *   (deduplicado para não reaparecer a cada refetch com o mesmo resultado).
+ * - Cotações nunca derrubam a carteira: um ativo sem cotação (ou todos,
+ *   quando a API responde 503) usa o custo médio como preço atual e a falha
+ *   é notificada com um toast (deduplicado para não reaparecer a cada
+ *   refetch com o mesmo resultado).
  */
 export function usePortfolio() {
   const transactionsQuery = useTransactions();
@@ -69,14 +80,19 @@ export function usePortfolio() {
   const lastNotifiedSignatureRef = useRef<string>('');
 
   useEffect(() => {
-    const failures = quotesQuery.data?.failures ?? [];
-    if (failures.length === 0) return;
+    const result = quotesQuery.data;
+    if (!result) return;
 
-    const signature = failures.map((failure) => `${failure.provider}:${failure.ticker ?? ''}`).join('|');
+    const signature = failureSignature(result);
+    // Tudo cotado: libera um novo aviso se as falhas voltarem depois.
+    if (signature === '') {
+      lastNotifiedSignatureRef.current = '';
+      return;
+    }
     if (signature === lastNotifiedSignatureRef.current) return;
 
     lastNotifiedSignatureRef.current = signature;
-    notifyFailures(failures);
+    notifyFailures(result);
   }, [quotesQuery.data]);
 
   const { refetch: refetchTransactions } = transactionsQuery;

@@ -21,7 +21,7 @@ interface ApiReplies {
   failedProviders?: string[];
   /** Substitui a resposta da busca da API (ex: um 503). */
   searchReply?: () => Response;
-  /** Cotação atual de PETR4 na Brapi; `null` simula a cotação indisponível. */
+  /** Cotação atual de PETR4 na API; `null` simula PETR4 em `failures`. */
   petr4Quote?: number | null;
 }
 
@@ -89,13 +89,17 @@ function stubNetwork({
     if (url.startsWith('http://api.test/api/assets/search')) {
       return searchReply ? searchReply() : fakeSearch(new URL(url), searchable, failedProviders);
     }
-    if (url.startsWith('https://brapi.dev/api/quote/PETR4')) {
-      return petr4Quote === null
-        ? jsonResponse({ error: true, message: 'indisponível' }, 404)
-        : jsonResponse({ results: [{ symbol: 'PETR4', regularMarketPrice: petr4Quote, currency: 'BRL' }] });
-    }
-    if (url.startsWith('https://api.coingecko.com/api/v3/simple/price')) {
-      return jsonResponse({ bitcoin: { brl: 33 } });
+    if (url.startsWith('http://api.test/api/quotes')) {
+      const prices: Record<string, number | null> = { PETR4: petr4Quote, BTC: 33 };
+      const symbols = (new URL(url).searchParams.get('symbols') ?? '').split(',');
+      return jsonResponse({
+        quotes: symbols
+          .filter((symbol) => typeof prices[symbol] === 'number')
+          .map((symbol) => ({ symbol, price: prices[symbol], currency: 'BRL' })),
+        failures: symbols
+          .filter((symbol) => typeof prices[symbol] !== 'number')
+          .map((symbol) => ({ symbol, provider: 'brapi', mensagem: 'Cotação indisponível' })),
+      });
     }
     if (url === 'http://api.test/api/transactions' && init?.method === 'POST') {
       return (create ?? (() => jsonResponse({ id: 1, ...JSON.parse(String(init.body)) }, 201)))();
@@ -253,6 +257,27 @@ describe('ContributionForm: preço por unidade e cotação atual', () => {
 
     await waitFor(() => expect(onSuccess).toHaveBeenCalled());
     expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('com as cotações indisponíveis (503), mostra o aviso no campo e salva direto', async () => {
+    const fetchMock = stubNetwork();
+    fetchMock.mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.startsWith('http://api.test/api/quotes')) return jsonResponse({ mensagem: 'indisponível' }, 503);
+      if (url.startsWith('http://api.test/api/assets/search')) {
+        return jsonResponse({ suggestions: [{ symbol: 'PETR4', name: 'PETROBRAS PN', assetClass: 'STOCK' }], failedProviders: [] });
+      }
+      if (init?.method === 'POST') return jsonResponse({ id: 1, ...JSON.parse(String(init.body)) }, 201);
+      return jsonResponse([]);
+    });
+    const { user, onSuccess } = renderForm();
+
+    await choosePetr4(user);
+    expect(await screen.findByText('Cotação atual indisponível.')).toBeInTheDocument();
+    await fillRest(user, '99999');
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
   });
 
   it('sem cotação disponível, não compara e salva direto', async () => {

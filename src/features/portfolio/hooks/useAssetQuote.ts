@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { fetchCryptoQuotes, fetchStockQuotes } from '@/services';
 import type { AssetSuggestion } from '@/features/portfolio/services/asset-search.api';
-import { isB3AssetClass } from '@/types';
+import { fetchQuotes } from '@/features/portfolio/services/quotes.api';
 
 /** A partir de qual diferença relativa o preço digitado é considerado fora do esperado (50%). */
 export const PRICE_DEVIATION_THRESHOLD = 0.5;
@@ -21,18 +20,15 @@ export function isPriceFarFromQuote(price: number, quote: number | null | undefi
 }
 
 async function fetchQuotePrice(asset: AssetSuggestion): Promise<number | null> {
-  const { quotes } =
-    isB3AssetClass(asset.assetClass)
-      ? await fetchStockQuotes([asset.ticker])
-      : await fetchCryptoQuotes([asset.ticker]);
-
-  return quotes[0]?.price ?? null;
+  const { quotes } = await fetchQuotes([asset.ticker]);
+  return quotes.find((quote) => quote.ticker === asset.ticker.toUpperCase())?.price ?? null;
 }
 
 /**
  * Cotação atual (em reais) do ativo escolhido no formulário, usada só como
- * referência para o preço digitado. `null` quando o provedor não tem a
- * cotação; nesse caso o formulário segue sem a comparação.
+ * referência para o preço digitado, buscada na API (`GET /api/quotes`).
+ * `null` quando não há cotação (símbolo em `failures` ou cotações
+ * indisponíveis); nesse caso o formulário segue sem a comparação.
  */
 export function useAssetQuote(asset: AssetSuggestion | null) {
   const query = useQuery({
