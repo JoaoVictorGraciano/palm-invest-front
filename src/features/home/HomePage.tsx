@@ -4,9 +4,14 @@ import { DashboardSkeleton } from '@/features/home/components/DashboardSkeleton'
 import { DashboardSummaryCards } from '@/features/home/components/DashboardSummaryCards';
 import { PortfolioDistributionChart } from '@/features/home/components/PortfolioDistributionChart';
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
+import { useProventosResumo } from '@/features/proventos/hooks/useProventos';
+import { useProventosByTicker } from '@/features/proventos/hooks/useProventosByTicker';
 
 export function HomePage() {
   const { portfolio, isLoading, isError, refetch } = usePortfolio();
+  const currentYear = new Date().getFullYear();
+  const incomeByTicker = useProventosByTicker();
+  const { data: resumo } = useProventosResumo(currentYear);
 
   return (
     <section className="mx-auto flex max-w-5xl flex-col gap-6 px-4 py-16">
@@ -33,7 +38,12 @@ export function HomePage() {
 
       {portfolio && !isLoading && (
         <>
-          <DashboardSummaryCards portfolio={portfolio} />
+          <DashboardSummaryCards
+            portfolio={portfolio}
+            incomeByTicker={incomeByTicker}
+            incomeThisYear={resumo?.ano === currentYear ? resumo.totalLiquido : undefined}
+            currentYear={currentYear}
+          />
           <PortfolioDistributionChart portfolio={portfolio} />
         </>
       )}

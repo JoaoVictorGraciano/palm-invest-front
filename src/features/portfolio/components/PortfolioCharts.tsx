@@ -66,7 +66,7 @@ export function PortfolioCharts({ portfolio }: PortfolioChartsProps) {
 
       {/* CARD 2: Gráfico de Barras */}
       <div className="rounded-xl border bg-card p-6 shadow-sm flex flex-col">
-        <h3 className="mb-4 text-lg font-semibold tracking-tight">Lucro / Prejuízo por Ativo</h3>
+        <h3 className="mb-4 text-lg font-semibold tracking-tight">Valorização por ativo</h3>
         <div className="h-64 w-full flex-1">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={performanceData as any} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -74,7 +74,7 @@ export function PortfolioCharts({ portfolio }: PortfolioChartsProps) {
               <XAxis dataKey="name" tick={{ fontSize: 12, fill: '#e4e4e7' }} tickLine={false} axisLine={false} />
               
               <RechartsTooltip 
-                 formatter={(value: any) => [formatCurrency(Number(value)), 'Resultado']}
+                 formatter={(value: any) => [formatCurrency(Number(value)), 'Valorização']}
                  cursor={{ fill: '#333', opacity: 0.2 }}
                  contentStyle={{ borderRadius: '8px', backgroundColor: '#18181b', border: '1px solid #333', color: '#fff' }}
                  itemStyle={{ color: '#e4e4e7' }}
