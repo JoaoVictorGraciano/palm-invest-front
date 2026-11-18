@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { searchAssets } from '@/services';
+import { searchAssets } from '@/features/portfolio/services/asset-search.api';
 import type { AssetClass } from '@/types';
 
 /** Mínimo de caracteres para consultar os provedores. */
@@ -20,8 +20,9 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 }
 
 /**
- * Sugestões de ativos (Brapi + CoinGecko) para o texto digitado; com
- * `assetClass`, só daquela classe e só do provedor dela. Espera o
+ * Sugestões de ativos para o texto digitado, buscadas na palm-invest-api
+ * (que consulta a Brapi e a CoinGecko); com `assetClass`, só daquela
+ * classe. Espera o
  * usuário parar de digitar e guarda os resultados em cache, para não gastar
  * a cota pública dos provedores a cada tecla.
  */
@@ -37,6 +38,8 @@ export function useAssetSearch(text: string, assetClass?: AssetClass) {
     staleTime: 5 * 60_000,
     retry: false,
     placeholderData: keepPreviousData,
+    // Falhas da busca aparecem na própria lista de sugestões, sem toast.
+    meta: { silent: true },
   });
 
   return {

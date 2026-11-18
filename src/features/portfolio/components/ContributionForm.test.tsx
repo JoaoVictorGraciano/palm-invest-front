@@ -15,16 +15,38 @@ interface ApiReplies {
   create?: () => Response;
   /** Transações já existentes (GET /api/transactions). */
   transactions?: unknown[];
-  /** Resposta da busca de ações (Brapi). */
-  stockSearch?: () => Response;
-  /** Resposta da busca de criptomoedas (CoinGecko). */
-  cryptoSearch?: () => Response;
+  /** Ativos que a busca da API conhece (filtrados por texto e classe como a API faz). */
+  searchable?: SearchableAsset[];
+  /** Provedores que a busca da API informa como fora do ar. */
+  failedProviders?: string[];
+  /** Substitui a resposta da busca da API (ex: um 503). */
+  searchReply?: () => Response;
   /** Cotação atual de PETR4 na Brapi; `null` simula a cotação indisponível. */
   petr4Quote?: number | null;
 }
 
-const DEFAULT_STOCKS = { stocks: [{ stock: 'PETR4', name: 'PETROBRAS PN' }] };
-const DEFAULT_COINS = { coins: [{ id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC', market_cap_rank: 1 }] };
+interface SearchableAsset {
+  symbol: string;
+  name: string;
+  assetClass: string;
+}
+
+const DEFAULT_SEARCHABLE: SearchableAsset[] = [
+  { symbol: 'PETR4', name: 'PETROBRAS PN', assetClass: 'STOCK' },
+  { symbol: 'BTC', name: 'Bitcoin', assetClass: 'CRYPTO' },
+];
+
+/** Imita `GET /api/assets/search`: filtra pela classe e pelo texto no símbolo ou no nome. */
+function fakeSearch(url: URL, searchable: SearchableAsset[], failedProviders: string[]): Response {
+  const q = (url.searchParams.get('q') ?? '').toUpperCase();
+  const assetClass = url.searchParams.get('class') ?? 'ALL';
+  const suggestions = searchable.filter(
+    (asset) =>
+      (assetClass === 'ALL' || asset.assetClass === assetClass) &&
+      (asset.symbol.toUpperCase().includes(q) || asset.name.toUpperCase().includes(q)),
+  );
+  return jsonResponse({ suggestions, failedProviders });
+}
 
 /** Compra já registrada na carteira, no formato da API. */
 function ownedBuy(assetSymbol: string, assetClass: 'STOCK' | 'CRYPTO') {
@@ -53,15 +75,19 @@ function optionTexts(): string[] {
 }
 
 /** Simula a palm-invest-api e os provedores de busca; nenhuma chamada real sai dos testes. */
-function stubNetwork({ create, transactions = [], stockSearch, cryptoSearch, petr4Quote = 32 }: ApiReplies = {}) {
+function stubNetwork({
+  create,
+  transactions = [],
+  searchable = DEFAULT_SEARCHABLE,
+  failedProviders = [],
+  searchReply,
+  petr4Quote = 32,
+}: ApiReplies = {}) {
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
 
-    if (url.startsWith('https://brapi.dev/api/quote/list')) {
-      return (stockSearch ?? (() => jsonResponse(DEFAULT_STOCKS)))();
-    }
-    if (url.startsWith('https://api.coingecko.com/api/v3/search')) {
-      return (cryptoSearch ?? (() => jsonResponse(DEFAULT_COINS)))();
+    if (url.startsWith('http://api.test/api/assets/search')) {
+      return searchReply ? searchReply() : fakeSearch(new URL(url), searchable, failedProviders);
     }
     if (url.startsWith('https://brapi.dev/api/quote/PETR4')) {
       return petr4Quote === null
@@ -282,17 +308,17 @@ describe('ContributionForm: total da operação em tempo real', () => {
 });
 
 describe('ContributionForm: filtro de classe', () => {
-  const MIXED_FUNDS = {
-    stocks: [
-      { stock: 'BOVA11', name: 'ISHARES IBOVESPA', type: 'fund', subType: 'etf' },
-      { stock: 'MXRF11', name: 'MAXI RENDA', type: 'fund', subType: 'fii' },
-    ],
-  };
+  const MIXED_FUNDS: SearchableAsset[] = [
+    { symbol: 'BOVA11', name: 'ISHARES IBOVESPA', assetClass: 'ETF' },
+    { symbol: 'MXRF11', name: 'MAXI RENDA', assetClass: 'FII' },
+  ];
 
-  function searchUrls(fetchMock: ReturnType<typeof stubNetwork>, host: string): URL[] {
+  /** Classes pedidas à busca da API, na ordem das chamadas. */
+  function searchedClasses(fetchMock: ReturnType<typeof stubNetwork>): (string | null)[] {
     return fetchMock.mock.calls
       .map(([input]) => new URL(String(input)))
-      .filter((url) => url.host === host && (url.pathname.endsWith('/quote/list') || url.pathname.endsWith('/search')));
+      .filter((url) => url.pathname === '/api/assets/search')
+      .map((url) => url.searchParams.get('class'));
   }
 
   function classButton(name: string) {
@@ -314,19 +340,17 @@ describe('ContributionForm: filtro de classe', () => {
     ]);
   });
 
-  it('em "Todos", consulta a Brapi e a CoinGecko', async () => {
+  it('em "Todos", busca na API com class=ALL', async () => {
     const fetchMock = stubNetwork();
     const { user } = renderForm();
 
     await user.type(screen.getByLabelText('Ativo'), 'petr');
     await screen.findByRole('option', { name: /PETR4/ });
 
-    expect(searchUrls(fetchMock, 'brapi.dev')).toHaveLength(1);
-    expect(searchUrls(fetchMock, 'brapi.dev')[0].searchParams.has('type')).toBe(false);
-    expect(searchUrls(fetchMock, 'api.coingecko.com')).toHaveLength(1);
+    expect(searchedClasses(fetchMock)).toEqual(['ALL']);
   });
 
-  it('em "Cripto", consulta só a CoinGecko', async () => {
+  it('em "Cripto", busca na API com class=CRYPTO', async () => {
     const fetchMock = stubNetwork();
     const { user } = renderForm();
 
@@ -335,12 +359,11 @@ describe('ContributionForm: filtro de classe', () => {
     await screen.findByRole('option', { name: /BTC/ });
 
     expect(optionTickers()).toEqual(['BTC']);
-    expect(searchUrls(fetchMock, 'api.coingecko.com')).toHaveLength(1);
-    expect(searchUrls(fetchMock, 'brapi.dev')).toHaveLength(0);
+    expect(searchedClasses(fetchMock)).toEqual(['CRYPTO']);
   });
 
-  it('em "FIIs", consulta só a Brapi (type=fund) e mostra só FIIs', async () => {
-    const fetchMock = stubNetwork({ stockSearch: () => jsonResponse(MIXED_FUNDS) });
+  it('em "FIIs", busca na API com class=FII e mostra só FIIs', async () => {
+    const fetchMock = stubNetwork({ searchable: MIXED_FUNDS });
     const { user } = renderForm();
 
     await user.click(classButton('FIIs'));
@@ -348,14 +371,13 @@ describe('ContributionForm: filtro de classe', () => {
     await screen.findByRole('option', { name: /MXRF11/ });
 
     expect(optionTickers()).toEqual(['MXRF11']);
-    expect(searchUrls(fetchMock, 'brapi.dev')[0].searchParams.get('type')).toBe('fund');
-    expect(searchUrls(fetchMock, 'api.coingecko.com')).toHaveLength(0);
+    expect(searchedClasses(fetchMock)).toEqual(['FII']);
   });
 
   it('o filtro também vale para as sugestões da carteira', async () => {
     stubNetwork({
       transactions: [ownedBuy('BITCOIN', 'CRYPTO')],
-      stockSearch: () => jsonResponse({ stocks: [] }),
+      searchable: [],
     });
     const { user } = renderForm();
 
@@ -367,7 +389,7 @@ describe('ContributionForm: filtro de classe', () => {
   });
 
   it('a classe salva vem do ativo escolhido, não do botão', async () => {
-    const fetchMock = stubNetwork({ stockSearch: () => jsonResponse(MIXED_FUNDS) });
+    const fetchMock = stubNetwork({ searchable: MIXED_FUNDS });
     const { user, onSuccess } = renderForm();
 
     // Escolhe o ETF com "Todos" e só depois troca o botão para "FIIs".
@@ -401,7 +423,10 @@ describe('ContributionForm: ordem das sugestões', () => {
   it('o BTC da busca fica acima de um símbolo antigo "BITCOIN" da carteira, que leva a etiqueta', async () => {
     stubNetwork({
       transactions: [ownedBuy('BITCOIN', 'CRYPTO')],
-      stockSearch: () => jsonResponse({ stocks: [{ stock: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE' }] }),
+      searchable: [
+        { symbol: 'BTC', name: 'Bitcoin', assetClass: 'CRYPTO' },
+        { symbol: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE', assetClass: 'STOCK' },
+      ],
     });
     const { user } = renderForm();
 
@@ -417,8 +442,8 @@ describe('ContributionForm: ordem das sugestões', () => {
   it('com a busca de cripto fora do ar, o ativo da carteira concorre pela ordem normal', async () => {
     stubNetwork({
       transactions: [ownedBuy('BITCOIN', 'CRYPTO')],
-      stockSearch: () => jsonResponse({ stocks: [{ stock: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE' }] }),
-      cryptoSearch: () => jsonResponse({ error: 'fora do ar' }, 503),
+      searchable: [{ symbol: 'MOTV3', name: 'MOTIVA INFRAESTRUTURA DE MOBILIDADE', assetClass: 'STOCK' }],
+      failedProviders: ['coingecko'],
     });
     const { user } = renderForm();
 
@@ -434,7 +459,7 @@ describe('ContributionForm: ordem das sugestões', () => {
   });
 
   it('um ativo da carteira que a busca também devolve aparece uma vez só, com a etiqueta', async () => {
-    stubNetwork({ transactions: [ownedBuy('PETR4', 'STOCK')], cryptoSearch: () => jsonResponse({ coins: [] }) });
+    stubNetwork({ transactions: [ownedBuy('PETR4', 'STOCK')] });
     const { user } = renderForm();
 
     await user.type(screen.getByLabelText('Ativo'), 'petr');
@@ -444,6 +469,23 @@ describe('ContributionForm: ordem das sugestões', () => {
     expect(texts).toHaveLength(1);
     expect(texts[0]).toContain('PETROBRAS PN');
     expect(texts[0]).toContain('Na sua carteira');
+  });
+});
+
+describe('ContributionForm: busca fora do ar', () => {
+  it('com 503 na busca, avisa e oferece só os ativos da carteira', async () => {
+    stubNetwork({
+      transactions: [ownedBuy('PETR4', 'STOCK')],
+      searchReply: () => jsonResponse({ mensagem: 'Provedores indisponíveis' }, 503),
+    });
+    const { user } = renderForm();
+
+    await user.type(screen.getByLabelText('Ativo'), 'petr');
+    // A sugestão da carteira aparece na hora; o aviso, quando a busca termina.
+    expect(await screen.findByText('A busca de ativos da B3 está indisponível no momento.')).toBeInTheDocument();
+
+    expect(optionTexts()).toEqual([expect.stringContaining('Na sua carteira')]);
+    expect(screen.getByText('A busca de criptomoedas está indisponível no momento.')).toBeInTheDocument();
   });
 });
 

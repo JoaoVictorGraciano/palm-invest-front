@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { fetchCryptoQuotes, fetchStockQuotes } from '@/services';
-import type { AssetSuggestion } from '@/services';
+import type { AssetSuggestion } from '@/features/portfolio/services/asset-search.api';
 import { isB3AssetClass } from '@/types';
 
 /** A partir de qual diferença relativa o preço digitado é considerado fora do esperado (50%). */
