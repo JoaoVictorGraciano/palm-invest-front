@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 const NAV_ITEMS = [
   { to: '/', label: 'Início' },
   { to: '/carteira', label: 'Carteira' },
+  { to: '/proventos', label: 'Proventos' },
   { to: '/historico', label: 'Histórico' },
 ];
 

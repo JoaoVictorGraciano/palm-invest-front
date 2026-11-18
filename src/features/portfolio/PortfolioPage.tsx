@@ -8,9 +8,11 @@ import { PortfolioSummaryCards } from '@/features/portfolio/components/Portfolio
 import { PortfolioCharts } from '@/features/portfolio/components/PortfolioCharts'; // 🚀 IMPORTAMOS SEU NOVO GRÁFICO AQUI!
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
 import type { AssetFilter } from '@/features/portfolio/types';
+import { useProventosByTicker } from '@/features/proventos/hooks/useProventosByTicker';
 
 export function PortfolioPage() {
   const { portfolio, isLoading, isError, isFetching, refetch } = usePortfolio();
+  const incomeByTicker = useProventosByTicker();
   const [filter, setFilter] = useState<AssetFilter>('ALL');
 
   const filteredAssets = useMemo(() => {
@@ -45,14 +47,14 @@ export function PortfolioPage() {
 
       {portfolio && !isLoading && (
         <>
-          <PortfolioSummaryCards portfolio={portfolio} />
+          <PortfolioSummaryCards portfolio={portfolio} incomeByTicker={incomeByTicker} />
           
           {/* 🚀 E COLOCAMOS ELE NA TELA AQUI: */}
           <PortfolioCharts portfolio={portfolio} />
           
           <div className="flex flex-col gap-4">
             <AssetClassFilter value={filter} onChange={setFilter} />
-            <AssetTable assets={filteredAssets} />
+            <AssetTable assets={filteredAssets} incomeByTicker={incomeByTicker} />
           </div>
         </>
       )}

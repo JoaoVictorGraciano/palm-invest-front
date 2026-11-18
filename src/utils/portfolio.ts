@@ -56,3 +56,43 @@ export function calculateClassDistribution(assets: Asset[]): ClassDistributionSl
       .reduce((sum, asset) => sum + asset.currentValue, 0),
   })).filter((slice) => slice.value > 0);
 }
+
+/**
+ * Resultado de uma posição (ou da carteira) separando o que é valorização
+ * do que é provento. Os percentuais são sobre o total investido, então
+ * `totalPercentage = appreciationPercentage + incomePercentage`.
+ */
+export interface TotalReturn {
+  /** Valorização: valor atual menos o investido. */
+  appreciation: number;
+  appreciationPercentage: number;
+  /** Proventos líquidos recebidos. */
+  income: number;
+  incomePercentage: number;
+  /** Valorização + proventos. */
+  total: number;
+  totalPercentage: number;
+}
+
+export function calculateTotalReturn(totalInvested: number, appreciation: number, income: number): TotalReturn {
+  const percentage = (value: number) => (totalInvested === 0 ? 0 : (value / totalInvested) * 100);
+  const total = appreciation + income;
+
+  return {
+    appreciation,
+    appreciationPercentage: percentage(appreciation),
+    income,
+    incomePercentage: percentage(income),
+    total,
+    totalPercentage: percentage(total),
+  };
+}
+
+/**
+ * Soma os proventos líquidos dos ativos que estão na carteira. Proventos de
+ * um ativo já vendido por inteiro ficam de fora, porque a valorização dele
+ * também não entra mais na conta.
+ */
+export function sumIncomeOfAssets(assets: Asset[], incomeByTicker: ReadonlyMap<string, number>): number {
+  return assets.reduce((sum, asset) => sum + (incomeByTicker.get(asset.ticker) ?? 0), 0);
+}

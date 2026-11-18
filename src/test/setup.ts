@@ -9,6 +9,12 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 
+// O jsdom não implementa a captura de ponteiro nem scrollIntoView, usados pelo Select do Radix.
+Element.prototype.hasPointerCapture ??= () => false;
+Element.prototype.setPointerCapture ??= () => {};
+Element.prototype.releasePointerCapture ??= () => {};
+Element.prototype.scrollIntoView ??= () => {};
+
 afterEach(() => {
   cleanup();
   window.localStorage.clear();

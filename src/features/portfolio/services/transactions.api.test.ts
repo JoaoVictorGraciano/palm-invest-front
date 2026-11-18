@@ -114,11 +114,17 @@ describe('mapeamento de transações', () => {
 });
 
 describe('deleteAssetTransactions', () => {
-  it('apaga todas as transações do ativo com uma única chamada DELETE', async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => jsonResponse({ assetSymbol: 'PETR4', excluidas: 2 }));
+  it('apaga todas as transações e proventos do ativo com uma única chamada DELETE', async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      jsonResponse({ assetSymbol: 'PETR4', excluidas: 2, proventosExcluidos: 3 }),
+    );
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(deleteAssetTransactions(' petr4 ')).resolves.toEqual({ ticker: 'PETR4', deleted: 2 });
+    await expect(deleteAssetTransactions(' petr4 ')).resolves.toEqual({
+      ticker: 'PETR4',
+      deleted: 2,
+      deletedProventos: 3,
+    });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0];

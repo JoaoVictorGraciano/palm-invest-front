@@ -17,7 +17,7 @@ interface DeleteAssetButtonProps {
   ticker: string;
 }
 
-/** Botão de lixeira com confirmação, para remover um ativo (e todo o seu histórico) da carteira. */
+/** Botão de lixeira com confirmação, para remover um ativo (com todo o histórico e os proventos) da carteira. */
 export function DeleteAssetButton({ ticker }: DeleteAssetButtonProps) {
   const { mutate, isPending } = useDeleteAsset();
 
@@ -38,8 +38,8 @@ export function DeleteAssetButton({ ticker }: DeleteAssetButtonProps) {
         <AlertDialogHeader>
           <AlertDialogTitle>Remover {ticker} da carteira?</AlertDialogTitle>
           <AlertDialogDescription>
-            Isso apaga permanentemente todo o histórico de transações de {ticker}. Essa ação não
-            pode ser desfeita.
+            Isso apaga permanentemente todo o histórico de transações de {ticker} e também todos os
+            proventos registrados dele. Essa ação não pode ser desfeita.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
