@@ -44,7 +44,7 @@ jobs:
       - name: Testes
         run: npm test
 
-      # O build não precisa de VITE_API_URL nem de VITE_BRAPI_TOKEN: as duas
-      # variáveis só são lidas quando o app roda no navegador.
+      # O build não precisa de VITE_API_URL: a variável só é lida quando o app
+      # roda no navegador.
       - name: Build
         run: npm run build
