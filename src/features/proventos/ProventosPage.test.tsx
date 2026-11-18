@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProventosPage } from '@/features/proventos/ProventosPage';
 import { buy, stubProventosApi } from '@/features/proventos/test/fake-proventos-api';
+import { chooseOption, optionLabels } from '@/test/select';
 import type { FakeProvento } from '@/features/proventos/test/fake-proventos-api';
 
 function provento(overrides: Partial<FakeProvento> & Pick<FakeProvento, 'id'>): FakeProvento {
@@ -101,11 +102,10 @@ describe('ProventosPage', () => {
     await screen.findByText('Total líquido em 2026');
 
     const select = screen.getByRole('combobox', { name: 'Ano' });
-    await waitFor(() =>
-      expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual(['2026', '2025']),
-    );
+    expect(select).toHaveAttribute('data-slot', 'select-trigger');
+    await waitFor(async () => expect(await optionLabels(user, select)).toEqual(['2026', '2025']));
 
-    await user.selectOptions(select, '2025');
+    await chooseOption(user, select, '2025');
 
     expect(await screen.findByText('Total líquido em 2025')).toBeInTheDocument();
     expect(screen.getByText('Média mensal').parentElement).toHaveTextContent('R$ 5,00');

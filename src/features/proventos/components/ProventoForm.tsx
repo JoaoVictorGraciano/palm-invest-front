@@ -7,6 +7,7 @@ import { Field, FieldContent, FieldDescription, FieldError, FieldGroup, FieldLab
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
 import { isProventoFormError, useSaveProvento } from '@/features/proventos/hooks/useSaveProvento';
@@ -191,20 +192,30 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
         <Field data-invalid={!!errors.ticker}>
           <FieldLabel htmlFor="provento-ticker">Ativo</FieldLabel>
           <FieldContent>
-            <select
-              id="provento-ticker"
-              aria-invalid={!!errors.ticker}
-              disabled={noAssets}
-              className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 disabled:opacity-50 md:text-sm dark:bg-input/30"
-              {...form.register('ticker')}
-            >
-              <option value="">Escolha um ativo da carteira</option>
-              {assetOptions.map((option) => (
-                <option key={option.ticker} value={option.ticker}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <Controller
+              control={form.control}
+              name="ticker"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange} disabled={noAssets}>
+                  <SelectTrigger
+                    id="provento-ticker"
+                    ref={field.ref}
+                    onBlur={field.onBlur}
+                    aria-invalid={!!errors.ticker}
+                    className="w-full"
+                  >
+                    <SelectValue placeholder="Escolha um ativo da carteira" />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {assetOptions.map((option) => (
+                      <SelectItem key={option.ticker} value={option.ticker}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
             {noAssets && (
               <FieldDescription>Registre uma compra na Carteira antes de lançar proventos.</FieldDescription>
             )}
