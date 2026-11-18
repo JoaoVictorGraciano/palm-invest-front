@@ -5,6 +5,7 @@ import { RegisterPage } from '@/features/auth/RegisterPage';
 import { HomePage } from '@/features/home/HomePage';
 import { HistoryPage } from '@/features/portfolio/HistoryPage';
 import { PortfolioPage } from '@/features/portfolio/PortfolioPage';
+import { ProventosPage } from '@/features/proventos/ProventosPage';
 import { PrivateRoute } from '@/routes/PrivateRoute';
 
 export const router = createBrowserRouter([
@@ -30,6 +31,10 @@ export const router = createBrowserRouter([
           {
             path: 'carteira',
             element: <PortfolioPage />,
+          },
+          {
+            path: 'proventos',
+            element: <ProventosPage />,
           },
           {
             path: 'historico',
