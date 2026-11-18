@@ -1,13 +1,16 @@
 import { useMemo, useState } from 'react';
+import { PlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { HistorySkeleton } from '@/features/portfolio/components/HistorySkeleton';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
+import { ProventoDialog } from '@/features/proventos/components/ProventoDialog';
 import { ProventosBreakdown } from '@/features/proventos/components/ProventosBreakdown';
 import { ProventosMonthlyChart } from '@/features/proventos/components/ProventosMonthlyChart';
 import { ProventosSummaryCards } from '@/features/proventos/components/ProventosSummaryCards';
 import { ProventosTable } from '@/features/proventos/components/ProventosTable';
 import { ProventosYearSelect } from '@/features/proventos/components/ProventosYearSelect';
 import { useProventos, useProventosResumo } from '@/features/proventos/hooks/useProventos';
+import type { Provento } from '@/features/proventos/types';
 import { availableYears } from '@/features/proventos/utils/proventos';
 
 export function ProventosPage() {
@@ -15,6 +18,8 @@ export function ProventosPage() {
   const { data: transactions } = useTransactions();
   const resumoQuery = useProventosResumo(ano);
   const proventosQuery = useProventos(ano);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Provento | undefined>(undefined);
 
   const years = useMemo(
     () => availableYears((transactions ?? []).map((transaction) => transaction.purchasedAt)),
@@ -25,6 +30,22 @@ export function ProventosPage() {
   const isError = resumoQuery.isError || proventosQuery.isError;
   const resumo = resumoQuery.data;
   const proventos = proventosQuery.data ?? [];
+
+  function openNew() {
+    setEditing(undefined);
+    setDialogOpen(true);
+  }
+
+  function openEdit(provento: Provento) {
+    setEditing(provento);
+    setDialogOpen(true);
+  }
+
+  // Depois de salvar, mostra o ano do pagamento, para o provento aparecer na lista.
+  function handleSaved(provento: Provento) {
+    const year = Number(provento.dataPagamento.slice(0, 4));
+    if (Number.isInteger(year) && year !== ano) setAno(year);
+  }
 
   function retry() {
     void resumoQuery.refetch();
@@ -40,6 +61,10 @@ export function ProventosPage() {
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <ProventosYearSelect value={ano} years={years} onChange={setAno} />
+          <Button variant="outline" onClick={openNew}>
+            <PlusIcon />
+            Novo provento
+          </Button>
         </div>
       </div>
 
@@ -65,10 +90,12 @@ export function ProventosPage() {
           )}
           <div className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold tracking-tight">Proventos de {ano}</h2>
-            <ProventosTable proventos={proventos} ano={ano} />
+            <ProventosTable proventos={proventos} ano={ano} onEdit={openEdit} />
           </div>
         </>
       )}
+
+      <ProventoDialog open={dialogOpen} onOpenChange={setDialogOpen} provento={editing} onSaved={handleSaved} />
     </section>
   );
 }

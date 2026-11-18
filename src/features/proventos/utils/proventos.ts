@@ -16,6 +16,14 @@ export const TIPO_PROVENTO_COLOR: Record<TipoProvento, string> = {
   [TIPO_PROVENTO.AMORTIZACAO]: '#f59e0b',
 };
 
+/** IR sugerido para JCP: 15% retidos na fonte. */
+export const JCP_IR_RATE = 0.15;
+
+/** 15% do bruto, arredondado em centavos. */
+export function suggestJcpIr(valorBruto: number): number {
+  return Number.isFinite(valorBruto) && valorBruto > 0 ? Math.round(valorBruto * JCP_IR_RATE * 100) / 100 : 0;
+}
+
 export const MONTH_SHORT_LABEL = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
 /** Data `AAAA-MM-DD` como `DD/MM/AAAA`, sem passar por `Date` (evita voltar um dia pelo fuso). */
