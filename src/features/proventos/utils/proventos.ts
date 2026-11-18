@@ -1,3 +1,5 @@
+import { ASSET_CLASS } from '@/types';
+import type { AssetClass } from '@/types';
 import { TIPO_PROVENTO } from '@/features/proventos/types';
 import type { ProventosResumo, TipoProvento } from '@/features/proventos/types';
 
@@ -67,4 +69,21 @@ export function availableYears(firstTransactionDates: string[], now = new Date()
   const firstYear = years.length > 0 ? Math.min(...years) : currentYear;
 
   return Array.from({ length: currentYear - firstYear + 1 }, (_, index) => currentYear - index);
+}
+
+/**
+ * Tipos de provento que cada classe paga. Cripto não paga proventos nesse
+ * sentido e fica fora do formulário.
+ */
+export const TIPOS_POR_CLASSE: Record<AssetClass, TipoProvento[]> = {
+  [ASSET_CLASS.STOCK]: [TIPO_PROVENTO.DIVIDENDO, TIPO_PROVENTO.JCP],
+  [ASSET_CLASS.FII]: [TIPO_PROVENTO.RENDIMENTO, TIPO_PROVENTO.AMORTIZACAO],
+  [ASSET_CLASS.ETF]: [TIPO_PROVENTO.DIVIDENDO, TIPO_PROVENTO.RENDIMENTO],
+  [ASSET_CLASS.BDR]: [TIPO_PROVENTO.DIVIDENDO],
+  [ASSET_CLASS.CRYPTO]: [],
+};
+
+/** Classes que podem receber proventos. */
+export function paysProventos(assetClass: AssetClass): boolean {
+  return TIPOS_POR_CLASSE[assetClass].length > 0;
 }

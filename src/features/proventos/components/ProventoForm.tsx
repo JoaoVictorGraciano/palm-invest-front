@@ -10,12 +10,20 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
+import { useAssetNames } from '@/features/proventos/hooks/useAssetNames';
 import { isProventoFormError, useSaveProvento } from '@/features/proventos/hooks/useSaveProvento';
 import { TIPO_PROVENTO, TIPO_PROVENTO_ORDER } from '@/features/proventos/types';
 import type { Provento, TipoProvento } from '@/features/proventos/types';
-import { TIPO_PROVENTO_LABEL, suggestJcpIr, todayIsoDate } from '@/features/proventos/utils/proventos';
+import {
+  TIPOS_POR_CLASSE,
+  TIPO_PROVENTO_LABEL,
+  paysProventos,
+  suggestJcpIr,
+  todayIsoDate,
+} from '@/features/proventos/utils/proventos';
 import { parseValidationErrors } from '@/services';
 import type { HttpError } from '@/services';
+import type { AssetClass } from '@/types';
 import { ASSET_CLASS_LABEL, formatCurrency } from '@/utils';
 
 const hasAtMostTwoDecimals = (value: number) => Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
@@ -58,7 +66,12 @@ const FORM_FIELD_BY_API_FIELD: Record<string, keyof ProventoFormInput | undefine
 
 interface AssetOption {
   ticker: string;
-  label: string;
+  assetClass: AssetClass;
+}
+
+/** Ex: "PETR4 · PETROBRAS PN · Ação"; sem o nome enquanto ele não chega da API. */
+function assetLabel(option: AssetOption, name: string | undefined): string {
+  return [option.ticker, name, ASSET_CLASS_LABEL[option.assetClass]].filter(Boolean).join(' · ');
 }
 
 interface ProventoFormProps {
@@ -78,17 +91,18 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
     onPendingChange?.(isPending);
   }, [isPending, onPendingChange]);
 
-  // Só os ativos que estão na carteira; na edição, o ativo salvo entra mesmo que já tenha sido vendido.
+  // Só os ativos da carteira que pagam proventos (cripto fica de fora). Na edição, o
+  // ativo salvo entra mesmo que já tenha sido vendido.
   const assetOptions = useMemo<AssetOption[]>(() => {
-    const options = getHoldingsFromTransactions(transactionsQuery.data ?? []).map((holding) => ({
-      ticker: holding.ticker,
-      label: `${holding.ticker} · ${ASSET_CLASS_LABEL[holding.assetClass]}`,
-    }));
+    const options: AssetOption[] = getHoldingsFromTransactions(transactionsQuery.data ?? [])
+      .filter((holding) => paysProventos(holding.assetClass))
+      .map((holding) => ({ ticker: holding.ticker, assetClass: holding.assetClass }));
     if (proventoToEdit && !options.some((option) => option.ticker === proventoToEdit.ticker)) {
-      options.push({ ticker: proventoToEdit.ticker, label: `${proventoToEdit.ticker} · ${ASSET_CLASS_LABEL[proventoToEdit.assetClass]}` });
+      options.push({ ticker: proventoToEdit.ticker, assetClass: proventoToEdit.assetClass });
     }
     return options.sort((a, b) => a.ticker.localeCompare(b.ticker));
   }, [transactionsQuery.data, proventoToEdit]);
+  const assetNames = useAssetNames(assetOptions);
 
   const form = useForm<ProventoFormInput, unknown, ProventoFormOutput>({
     resolver: zodResolver(proventoFormSchema),
@@ -111,6 +125,16 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
   const valorBruto = Number(form.watch('valorBruto'));
   const irRetido = Number(form.watch('irRetido') || 0);
   const isJcp = tipo === TIPO_PROVENTO.JCP;
+  const selectedTicker = form.watch('ticker');
+
+  /** Tipos que a classe do ativo paga; sem ativo escolhido, todos. Na edição, o tipo salvo continua valendo. */
+  function tiposFor(ticker: string): TipoProvento[] {
+    const assetClass = assetOptions.find((option) => option.ticker === ticker)?.assetClass;
+    const tipos = assetClass ? TIPOS_POR_CLASSE[assetClass] : TIPO_PROVENTO_ORDER;
+    const saved = proventoToEdit?.ticker === ticker ? proventoToEdit.tipo : undefined;
+    return saved && !tipos.includes(saved) ? [...tipos, saved] : tipos;
+  }
+  const allowedTipos = tiposFor(selectedTicker);
 
   function applyIrSuggestion(nextTipo: TipoProvento, bruto: number) {
     form.setValue('irRetido', nextTipo === TIPO_PROVENTO.JCP ? suggestJcpIr(bruto) : 0, {
@@ -122,6 +146,13 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
     form.setValue('tipo', nextTipo, { shouldDirty: true });
     setIrEditedByUser(false);
     applyIrSuggestion(nextTipo, Number(form.getValues('valorBruto')));
+  }
+
+  /** Ao trocar de ativo, um tipo que a nova classe não paga vira o primeiro tipo válido. */
+  function handleTickerChange(ticker: string) {
+    form.setValue('ticker', ticker, { shouldDirty: true, shouldValidate: form.formState.isSubmitted });
+    const tipos = tiposFor(ticker);
+    if (tipos.length > 0 && !tipos.includes(form.getValues('tipo'))) handleTipoChange(tipos[0]);
   }
 
   const showNet = Number.isFinite(valorBruto) && valorBruto > 0 && Number.isFinite(irRetido);
@@ -196,7 +227,7 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
               control={form.control}
               name="ticker"
               render={({ field }) => (
-                <Select value={field.value} onValueChange={field.onChange} disabled={noAssets}>
+                <Select value={field.value} onValueChange={handleTickerChange} disabled={noAssets}>
                   <SelectTrigger
                     id="provento-ticker"
                     ref={field.ref}
@@ -206,12 +237,26 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
                   >
                     <SelectValue placeholder="Escolha um ativo da carteira" />
                   </SelectTrigger>
-                  <SelectContent position="popper">
-                    {assetOptions.map((option) => (
-                      <SelectItem key={option.ticker} value={option.ticker}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
+                  {/* Mesma largura do campo: nomes longos da B3 são cortados com reticências. */}
+                  <SelectContent position="popper" className="w-(--radix-select-trigger-width)">
+                    {assetOptions.map((option) => {
+                      const name = assetNames.get(option.ticker);
+                      const label = assetLabel(option, name);
+                      return (
+                        <SelectItem
+                          key={option.ticker}
+                          value={option.ticker}
+                          title={label}
+                          className="*:[span]:last:min-w-0"
+                        >
+                          {/* Só o nome é cortado; a classe continua visível. O aria-label dá o texto inteiro. */}
+                          <span aria-label={label} className="flex min-w-0">
+                            <span className="truncate">{[option.ticker, name].filter(Boolean).join(' · ')}</span>
+                            <span className="shrink-0 whitespace-pre">{' · '}{ASSET_CLASS_LABEL[option.assetClass]}</span>
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               )}
@@ -236,7 +281,7 @@ export function ProventoForm({ formId, onSuccess, onPendingChange, proventoToEdi
                   value={field.value}
                   onValueChange={(value) => handleTipoChange(value as TipoProvento)}
                 >
-                  {TIPO_PROVENTO_ORDER.map((option) => (
+                  {allowedTipos.map((option) => (
                     <Label
                       key={option}
                       htmlFor={`provento-tipo-${option}`}

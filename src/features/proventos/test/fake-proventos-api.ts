@@ -50,6 +50,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 const TIPOS = ['DIVIDENDO', 'JCP', 'RENDIMENTO', 'AMORTIZACAO'];
 
+/** Nomes que a busca de ativos da API devolve nos testes. */
+export const ASSET_NAMES: Record<string, string> = {
+  PETR4: 'PETROBRAS PN',
+  HGLG11: 'PATRIA LOG',
+  VALE3: 'VALE ON',
+  BOVA11: 'ISHARES IBOVESPA',
+  AAPL34: 'APPLE DRN',
+  BTC: 'Bitcoin',
+};
+
 function withLiquido(provento: FakeProvento) {
   return { ...provento, valorLiquido: provento.valorBruto - provento.irRetido };
 }
@@ -87,6 +97,16 @@ export function stubProventosApi(options: FakeApiOptions = {}) {
       state.proventos = state.proventos.filter((item) => item.assetSymbol !== symbol);
       if (excluidas + proventosExcluidos === 0) return jsonResponse({ mensagem: 'Nada a excluir' }, 404);
       return jsonResponse({ assetSymbol: symbol, excluidas, proventosExcluidos });
+    }
+
+    if (url.pathname === '/api/assets/search') {
+      const q = (url.searchParams.get('q') ?? '').toUpperCase();
+      const assetClass = url.searchParams.get('class') ?? 'ALL';
+      const name = ASSET_NAMES[q];
+      return jsonResponse({
+        suggestions: name ? [{ symbol: q, name, assetClass }] : [],
+        failedProviders: [],
+      });
     }
 
     if (url.pathname === '/api/quotes') {

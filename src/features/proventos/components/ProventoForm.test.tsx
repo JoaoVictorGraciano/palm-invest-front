@@ -14,6 +14,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 const TRANSACTIONS = [
   buy('PETR4', 'STOCK'),
   buy('HGLG11', 'FII'),
+  buy('BOVA11', 'ETF'),
+  buy('AAPL34', 'BDR'),
+  // Sem nome na busca da API: aparece só com símbolo e classe.
+  buy('ITUB4', 'STOCK'),
+  // Cripto não paga proventos: fica fora da lista.
+  buy('BTC', 'CRYPTO'),
   // Vendido por inteiro: não está mais na carteira.
   buy('VALE3', 'STOCK'),
   { ...buy('VALE3', 'STOCK', '2025-02-01T10:00:00'), id: 't-VALE3-venda', type: 'SELL' as const },
@@ -31,7 +37,7 @@ async function openNewForm() {
   await user.click(screen.getByRole('button', { name: 'Novo provento' }));
   const dialog = await screen.findByRole('dialog', { name: 'Registrar provento' });
   // Espera as transações chegarem para o seletor de ativos.
-  await waitFor(async () => expect(await optionLabels(user, field(dialog, 'Ativo'))).toContain('PETR4 · Ação'));
+  await waitFor(async () => expect(await optionLabels(user, field(dialog, 'Ativo'))).toContain('PETR4 · PETROBRAS PN · Ação'));
   return { user, dialog };
 }
 
@@ -53,12 +59,18 @@ describe('ProventoForm', () => {
     vi.setSystemTime(new Date(2026, 10, 18, 12));
   });
 
-  it('oferece só os ativos que estão na carteira e começa com a data de hoje', async () => {
+  it('oferece só os ativos da carteira que pagam proventos (sem cripto), com símbolo, nome e classe', async () => {
     stubProventosApi({ transactions: TRANSACTIONS });
     const { user, dialog } = await openNewForm();
 
     const options = await optionLabels(user, field(dialog, 'Ativo'));
-    expect(options).toEqual(['HGLG11 · FII', 'PETR4 · Ação']);
+    expect(options).toEqual([
+      'AAPL34 · APPLE DRN · BDR',
+      'BOVA11 · ISHARES IBOVESPA · ETF',
+      'HGLG11 · PATRIA LOG · FII',
+      'ITUB4 · Ação',
+      'PETR4 · PETROBRAS PN · Ação',
+    ]);
     expect(field(dialog, 'Ativo')).toHaveTextContent('Escolha um ativo da carteira');
     // É o Select do projeto (lista estilizada pelo tema), não um <select> nativo.
     expect(field(dialog, 'Ativo').tagName).toBe('BUTTON');
@@ -66,6 +78,37 @@ describe('ProventoForm', () => {
     expect(field(dialog, 'Data de pagamento').value).toBe('2026-11-18');
     expect(field(dialog, 'Data de pagamento').max).toBe('2026-11-18');
     expect(field(dialog, 'IR retido (R$)').value).toBe('0');
+  });
+
+  it('o tipo se adapta à classe do ativo e cai no primeiro válido ao trocar de ativo', async () => {
+    stubProventosApi({ transactions: TRANSACTIONS });
+    const { user, dialog } = await openNewForm();
+    const tipos = () => within(dialog).getAllByRole('radio').map((radio) => radio.getAttribute('value'));
+    const checked = () => within(dialog).getByRole('radio', { checked: true }).getAttribute('value');
+
+    // Sem ativo escolhido, todos os tipos.
+    expect(tipos()).toEqual(['DIVIDENDO', 'JCP', 'RENDIMENTO', 'AMORTIZACAO']);
+
+    await chooseOption(user, field(dialog, 'Ativo'), 'PETR4 · PETROBRAS PN · Ação');
+    expect(tipos()).toEqual(['DIVIDENDO', 'JCP']);
+    await user.click(within(dialog).getByRole('radio', { name: 'JCP' }));
+    await user.type(field(dialog, 'Valor bruto (R$)'), '100');
+    expect(field(dialog, 'IR retido (R$)').value).toBe('15');
+
+    // JCP não vale para FII: vira Rendimento e o IR volta a 0.
+    await chooseOption(user, field(dialog, 'Ativo'), 'HGLG11 · PATRIA LOG · FII');
+    expect(tipos()).toEqual(['RENDIMENTO', 'AMORTIZACAO']);
+    expect(checked()).toBe('RENDIMENTO');
+    expect(field(dialog, 'IR retido (R$)').value).toBe('0');
+
+    // Rendimento também vale para ETF: continua marcado.
+    await chooseOption(user, field(dialog, 'Ativo'), 'BOVA11 · ISHARES IBOVESPA · ETF');
+    expect(tipos()).toEqual(['DIVIDENDO', 'RENDIMENTO']);
+    expect(checked()).toBe('RENDIMENTO');
+
+    await chooseOption(user, field(dialog, 'Ativo'), 'AAPL34 · APPLE DRN · BDR');
+    expect(tipos()).toEqual(['DIVIDENDO']);
+    expect(checked()).toBe('DIVIDENDO');
   });
 
   it('JCP sugere IR de 15% do bruto, editável, e mostra o líquido em tempo real', async () => {
@@ -102,7 +145,7 @@ describe('ProventoForm', () => {
     const { callsTo } = stubProventosApi({ transactions: TRANSACTIONS });
     const { user, dialog } = await openNewForm();
 
-    await chooseOption(user, field(dialog, 'Ativo'), 'PETR4 · Ação');
+    await chooseOption(user, field(dialog, 'Ativo'), 'PETR4 · PETROBRAS PN · Ação');
     await user.click(within(dialog).getByRole('radio', { name: 'JCP' }));
     await user.clear(field(dialog, 'Data de pagamento'));
     await user.type(field(dialog, 'Data de pagamento'), '2026-03-20');
@@ -147,7 +190,7 @@ describe('ProventoForm', () => {
     stubProventosApi({ transactions: TRANSACTIONS, saveReply: () => reply() });
     const { user, dialog } = await openNewForm();
 
-    await chooseOption(user, field(dialog, 'Ativo'), 'HGLG11 · FII');
+    await chooseOption(user, field(dialog, 'Ativo'), 'HGLG11 · PATRIA LOG · FII');
     await user.click(within(dialog).getByRole('radio', { name: 'Rendimento' }));
     await user.type(field(dialog, 'Valor bruto (R$)'), '80');
     await user.click(screen.getByRole('button', { name: 'Registrar provento' }));
@@ -188,7 +231,7 @@ describe('ProventoForm', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Editar JCP de PETR4 em 10/04/2026' }));
     const dialog = await screen.findByRole('dialog', { name: 'Editar provento' });
-    expect(field(dialog, 'Ativo')).toHaveTextContent('PETR4 · Ação');
+    expect(field(dialog, 'Ativo')).toHaveTextContent('PETR4 · PETROBRAS PN · Ação');
     expect(field(dialog, 'IR retido (R$)').value).toBe('10');
 
     // Mudar o bruto não troca um IR que já estava salvo.
