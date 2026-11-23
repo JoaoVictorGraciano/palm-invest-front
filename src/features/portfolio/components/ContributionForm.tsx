@@ -22,6 +22,8 @@ import { useRememberedAssetFilter } from '@/features/portfolio/hooks/useRemember
 import { toast } from 'sonner';
 import { isPriceFarFromQuote, priceDeviation, useAssetQuote } from '@/features/portfolio/hooks/useAssetQuote';
 import { isFormError, useSaveTransaction } from '@/features/portfolio/hooks/useSaveTransaction';
+import { useLimiteIsencao } from '@/features/impostos/hooks/useResultados';
+import { checkExemptionLimit, exemptionCategoryOf, monthOf } from '@/features/impostos/utils/impostos';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { getAvailableQuantity, getHoldingsFromTransactions } from '@/features/portfolio/services/holdings';
 import { describeTransactionTotal } from '@/features/portfolio/services/transaction-total';
@@ -143,8 +145,43 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
   const deviation = priceDeviation(typedPrice, quote.price);
   const isPriceFar = isPriceFarFromQuote(typedPrice, quote.price);
 
-  /** Valores aguardando o usuário confirmar um preço muito diferente da cotação. */
-  const [pendingConfirmation, setPendingConfirmation] = useState<ContributionFormOutput | null>(null);
+  // Limite de isenção do mês da venda (só ações e cripto): avisa se esta venda passa do limite.
+  const exemptionCategory = isSell ? exemptionCategoryOf(selectedAsset?.assetClass) : null;
+  const saleMonth = exemptionCategory ? monthOf(form.watch('transactionDate') ?? '') : null;
+  const limitQuery = useLimiteIsencao(saleMonth, { silent: true });
+
+  function checkSale(quantity: number, price: number, mes: string | null) {
+    const limite = exemptionCategory && limitQuery.data?.mes === mes ? limitQuery.data[exemptionCategory] : null;
+    if (!exemptionCategory || !mes || !limite) return null;
+    const saleValue = quantity * price;
+
+    // Na edição de uma venda do mesmo mês e categoria, a API já contou o valor antigo.
+    const edited = transactionToEdit;
+    const alreadyCounted =
+      edited?.type === TRANSACTION_TYPE.SELL &&
+      exemptionCategoryOf(edited.assetClass) === exemptionCategory &&
+      monthOf(edited.purchasedAt) === mes
+        ? edited.quantity * edited.pricePaid
+        : 0;
+
+    return checkExemptionLimit({
+      category: exemptionCategory,
+      mes,
+      limite: limite.limite,
+      vendido: limite.vendido,
+      saleValue: Number.isFinite(saleValue) && saleValue > 0 ? saleValue : 0,
+      alreadyCounted,
+    });
+  }
+  const exemption = checkSale(Number(form.watch('quantity')), typedPrice, saleMonth);
+
+  type ConfirmationReason = 'price' | 'limit';
+  /** Valores aguardando confirmação: preço muito diferente da cotação e/ou venda que passa do limite de isenção. */
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    values: ContributionFormOutput;
+    reasons: ConfirmationReason[];
+    limitMessage: string | null;
+  } | null>(null);
 
   function describeDeviation(price: number): string {
     const value = priceDeviation(price, quote.price) ?? 0;
@@ -184,8 +221,25 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
     const keptSavedPrice =
       transactionToEdit?.ticker === values.ticker && transactionToEdit.pricePaid === values.pricePaid;
 
-    if (!keptSavedPrice && isPriceFarFromQuote(values.pricePaid, quote.price)) {
-      setPendingConfirmation(values);
+    const reasons: ConfirmationReason[] = [];
+    if (!keptSavedPrice && isPriceFarFromQuote(values.pricePaid, quote.price)) reasons.push('price');
+
+    // Venda que leva o mês acima do limite de isenção: o lucro do mês inteiro fica tributável.
+    // Na edição, uma venda salva sem mudança de ativo, quantidade, preço ou mês não é perguntada de novo.
+    const keptSavedSale =
+      transactionToEdit?.type === values.type &&
+      transactionToEdit.ticker === values.ticker &&
+      transactionToEdit.quantity === values.quantity &&
+      transactionToEdit.pricePaid === values.pricePaid &&
+      monthOf(transactionToEdit.purchasedAt) === monthOf(values.transactionDate);
+    const saleCheck =
+      values.type === TRANSACTION_TYPE.SELL
+        ? checkSale(values.quantity, values.pricePaid, monthOf(values.transactionDate))
+        : null;
+    if (!keptSavedSale && saleCheck?.crosses) reasons.push('limit');
+
+    if (reasons.length > 0) {
+      setPendingConfirmation({ values, reasons, limitMessage: saleCheck?.message ?? null });
       return;
     }
 
@@ -350,6 +404,19 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
             </p>
           )}
 
+          {exemption?.message && (
+            <p
+              role="status"
+              className={
+                exemption.crosses
+                  ? 'rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-sm'
+                  : 'rounded-lg border bg-muted/40 p-2.5 text-sm text-muted-foreground'
+              }
+            >
+              {exemption.message}
+            </p>
+          )}
+
           <Field data-invalid={!!form.formState.errors.fee}>
             <FieldLabel htmlFor="fee">Taxas e Custos (R$)</FieldLabel>
             <FieldContent>
@@ -383,22 +450,37 @@ export function ContributionForm({ onSuccess, onPendingChange, formId, transacti
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Preço bem diferente da cotação</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingConfirmation && quote.price !== null && (
-                <>
-                  Você informou {formatCurrency(pendingConfirmation.pricePaid)} por unidade de{' '}
-                  {pendingConfirmation.ticker}, {describeDeviation(pendingConfirmation.pricePaid)} da cotação atual (
-                  {formatCurrency(quote.price)}). Se for uma operação antiga, isso pode estar certo.
-                </>
-              )}
+            <AlertDialogTitle>
+              {pendingConfirmation?.reasons.length === 2
+                ? 'Confira antes de salvar'
+                : pendingConfirmation?.reasons[0] === 'limit'
+                  ? 'Vendas acima do limite de isenção'
+                  : 'Preço bem diferente da cotação'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="flex flex-col gap-2">
+                {pendingConfirmation?.reasons.includes('price') && quote.price !== null && (
+                  <p>
+                    Você informou {formatCurrency(pendingConfirmation.values.pricePaid)} por unidade de{' '}
+                    {pendingConfirmation.values.ticker}, {describeDeviation(pendingConfirmation.values.pricePaid)} da
+                    cotação atual ({formatCurrency(quote.price)}). Se for uma operação antiga, isso pode estar certo.
+                  </p>
+                )}
+                {pendingConfirmation?.reasons.includes('limit') && pendingConfirmation.limitMessage && (
+                  <p>{pendingConfirmation.limitMessage}</p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Revisar preço</AlertDialogCancel>
+            <AlertDialogCancel>
+              {pendingConfirmation?.reasons.length === 1 && pendingConfirmation.reasons[0] === 'price'
+                ? 'Revisar preço'
+                : 'Revisar'}
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                const values = pendingConfirmation;
+                const values = pendingConfirmation?.values;
                 setPendingConfirmation(null);
                 if (values) void save(values);
               }}
