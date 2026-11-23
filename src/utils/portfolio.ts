@@ -96,3 +96,25 @@ export function calculateTotalReturn(totalInvested: number, appreciation: number
 export function sumIncomeOfAssets(assets: Asset[], incomeByTicker: ReadonlyMap<string, number>): number {
   return assets.reduce((sum, asset) => sum + (incomeByTicker.get(asset.ticker) ?? 0), 0);
 }
+
+/**
+ * Resultado total, separado nas três partes: lucro já realizado nas vendas,
+ * lucro em aberto (valorização das posições atuais) e proventos recebidos.
+ */
+export interface TotalResult {
+  realized: number;
+  open: number;
+  income: number;
+  total: number;
+}
+
+export function calculateTotalResult(realized: number, open: number, income: number): TotalResult {
+  return { realized, open, income, total: realized + open + income };
+}
+
+/** Soma todos os valores de um mapa por ticker (ex: proventos ou lucro realizado de todos os ativos). */
+export function sumByTicker(valuesByTicker: ReadonlyMap<string, number>): number {
+  let total = 0;
+  for (const value of valuesByTicker.values()) total += value;
+  return total;
+}

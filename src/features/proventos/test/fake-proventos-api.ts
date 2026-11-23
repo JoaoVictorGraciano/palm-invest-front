@@ -27,6 +27,8 @@ export interface FakeTransaction {
   broker: string;
   fee: number;
   observation: string;
+  /** Só nas vendas. */
+  lucroRealizado?: number | null;
 }
 
 export function buy(assetSymbol: string, assetClass: string, transactionDate = '2025-01-02T10:00:00', price = 10) {

@@ -1,10 +1,12 @@
 import type { Asset } from '@/types';
 import { cn } from '@/lib/utils';
-import { ASSET_CLASS_LABEL, calculateTotalReturn, formatCurrency, formatPercentage } from '@/utils';
+import { ASSET_CLASS_LABEL, calculateTotalResult, formatCurrency, formatPercentage } from '@/utils';
 import { DeleteAssetButton } from '@/features/portfolio/components/DeleteAssetButton';
 
 interface AssetTableProps {
   assets: Asset[];
+  /** Lucro realizado nas vendas, por ticker. */
+  realizedByTicker?: ReadonlyMap<string, number>;
   /** Proventos líquidos recebidos por ticker; `undefined` enquanto carregam ou se falharem. */
   incomeByTicker?: ReadonlyMap<string, number>;
 }
@@ -13,7 +15,17 @@ function resultColor(value: number) {
   return value >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 }
 
-export function AssetTable({ assets, incomeByTicker }: AssetTableProps) {
+/** Valor de um mapa por ticker: 0 se o ticker não aparece, `undefined` se o mapa ainda não existe. */
+function valueOf(map: ReadonlyMap<string, number> | undefined, ticker: string): number | undefined {
+  return map ? (map.get(ticker) ?? 0) : undefined;
+}
+
+function Money({ value, currency, colored = false }: { value: number | undefined; currency: string; colored?: boolean }) {
+  if (value === undefined) return <>—</>;
+  return <span className={cn(colored && resultColor(value))}>{formatCurrency(value, 'pt-BR', currency)}</span>;
+}
+
+export function AssetTable({ assets, realizedByTicker, incomeByTicker }: AssetTableProps) {
   if (assets.length === 0) {
     return (
       <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
@@ -34,16 +46,21 @@ export function AssetTable({ assets, incomeByTicker }: AssetTableProps) {
               <th className="px-4 py-3 text-right font-medium">Custo médio</th>
               <th className="px-4 py-3 text-right font-medium">Cotação atual</th>
               <th className="px-4 py-3 text-right font-medium">Valor atual</th>
-              <th className="px-4 py-3 text-right font-medium">Valorização</th>
+              <th className="px-4 py-3 text-right font-medium">Lucro em aberto</th>
+              <th className="px-4 py-3 text-right font-medium">Lucro realizado</th>
               <th className="px-4 py-3 text-right font-medium">Proventos</th>
-              <th className="px-4 py-3 text-right font-medium">Resultado c/ proventos</th>
+              <th className="px-4 py-3 text-right font-medium">Resultado total</th>
               <th className="px-4 py-3 text-right font-medium">Ações</th>
             </tr>
           </thead>
           <tbody>
             {assets.map((asset) => {
-              const income = incomeByTicker?.get(asset.ticker) ?? (incomeByTicker ? 0 : undefined);
-              const result = calculateTotalReturn(asset.totalInvested, asset.profit, income ?? 0);
+              const realized = valueOf(realizedByTicker, asset.ticker);
+              const income = valueOf(incomeByTicker, asset.ticker);
+              const total =
+                realized === undefined || income === undefined
+                  ? undefined
+                  : calculateTotalResult(realized, asset.profit, income).total;
 
               return (
                 <tr key={asset.id} className="border-b last:border-0">
@@ -71,22 +88,13 @@ export function AssetTable({ assets, incomeByTicker }: AssetTableProps) {
                     <span className="ml-1 text-xs">({formatPercentage(asset.profitPercentage)})</span>
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap">
-                    {income === undefined ? '—' : formatCurrency(income, 'pt-BR', asset.currency)}
+                    <Money value={realized} currency={asset.currency} colored />
                   </td>
-                  <td
-                    className={cn(
-                      'px-4 py-3 text-right font-medium whitespace-nowrap',
-                      income !== undefined && resultColor(result.total),
-                    )}
-                  >
-                    {income === undefined ? (
-                      '—'
-                    ) : (
-                      <>
-                        {formatCurrency(result.total, 'pt-BR', asset.currency)}
-                        <span className="ml-1 text-xs">({formatPercentage(result.totalPercentage)})</span>
-                      </>
-                    )}
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    <Money value={income} currency={asset.currency} />
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium whitespace-nowrap">
+                    <Money value={total} currency={asset.currency} colored />
                   </td>
                   <td className="px-4 py-3 text-right">
                     <DeleteAssetButton ticker={asset.ticker} />
@@ -98,8 +106,9 @@ export function AssetTable({ assets, incomeByTicker }: AssetTableProps) {
         </table>
       </div>
       <p className="text-xs text-muted-foreground">
-        Valorização: valor atual menos o investido. Proventos: total líquido recebido (dividendos, JCP, rendimentos e
-        amortizações). Resultado c/ proventos: valorização + proventos, em relação ao investido.
+        Lucro em aberto: valor atual menos o investido nas posições atuais. Lucro realizado: resultado das vendas já
+        feitas. Proventos: total líquido recebido. Resultado total = realizado + em aberto + proventos. Os totais dos
+        cards também incluem ativos já vendidos por inteiro.
       </p>
     </div>
   );
