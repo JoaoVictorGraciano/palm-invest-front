@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Início' },
   { to: '/carteira', label: 'Carteira' },
   { to: '/proventos', label: 'Proventos' },
+  { to: '/impostos', label: 'Impostos' },
   { to: '/historico', label: 'Histórico' },
 ];
 

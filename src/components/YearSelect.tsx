@@ -2,7 +2,7 @@ import { useId } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
-interface ProventosYearSelectProps {
+interface YearSelectProps {
   value: number;
   years: number[];
   onChange: (year: number) => void;
@@ -10,7 +10,7 @@ interface ProventosYearSelectProps {
 }
 
 /** Seletor de ano com o `Select` do projeto (legível nos temas claro e escuro). */
-export function ProventosYearSelect({ value, years, onChange, className }: ProventosYearSelectProps) {
+export function YearSelect({ value, years, onChange, className }: YearSelectProps) {
   const labelId = useId();
   const options = years.includes(value) ? years : [value, ...years].sort((a, b) => b - a);
 

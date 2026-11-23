@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { PlusIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { YearSelect } from '@/components/YearSelect';
 import { HistorySkeleton } from '@/features/portfolio/components/HistorySkeleton';
 import { useTransactions } from '@/features/portfolio/hooks/useTransactions';
 import { ProventoDialog } from '@/features/proventos/components/ProventoDialog';
@@ -8,7 +9,6 @@ import { ProventosBreakdown } from '@/features/proventos/components/ProventosBre
 import { ProventosMonthlyChart } from '@/features/proventos/components/ProventosMonthlyChart';
 import { ProventosSummaryCards } from '@/features/proventos/components/ProventosSummaryCards';
 import { ProventosTable } from '@/features/proventos/components/ProventosTable';
-import { ProventosYearSelect } from '@/features/proventos/components/ProventosYearSelect';
 import { useProventos, useProventosResumo } from '@/features/proventos/hooks/useProventos';
 import type { Provento } from '@/features/proventos/types';
 import { availableYears } from '@/features/proventos/utils/proventos';
@@ -60,7 +60,7 @@ export function ProventosPage() {
           <p className="text-muted-foreground">Dividendos, JCP, rendimentos e amortizações recebidos.</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <ProventosYearSelect value={ano} years={years} onChange={setAno} />
+          <YearSelect value={ano} years={years} onChange={setAno} />
           <Button variant="outline" onClick={openNew}>
             <PlusIcon />
             Novo provento

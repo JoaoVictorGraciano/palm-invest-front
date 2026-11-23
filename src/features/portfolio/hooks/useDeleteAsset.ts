@@ -5,6 +5,7 @@ import { TRANSACTIONS_QUERY_KEY } from '@/features/portfolio/hooks/useTransactio
 import { deleteAssetTransactions } from '@/features/portfolio/services/transactions.api';
 import type { AssetDeletionResult } from '@/features/portfolio/services/transactions.api';
 import { PROVENTOS_QUERY_KEY } from '@/features/proventos/hooks/useProventos';
+import { RESULTADOS_QUERY_KEY } from '@/features/impostos/hooks/useResultados';
 
 /** Ex: "PETR4 removido, junto com 2 proventos." */
 export function describeAssetDeletion({ ticker, deletedProventos }: AssetDeletionResult): string {
@@ -43,6 +44,7 @@ export function useDeleteAsset() {
       Promise.all([
         queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEY }),
         queryClient.invalidateQueries({ queryKey: PROVENTOS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: RESULTADOS_QUERY_KEY }),
       ]),
   });
 }
