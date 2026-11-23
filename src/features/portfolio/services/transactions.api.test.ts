@@ -54,7 +54,14 @@ describe('mapeamento de transações', () => {
       broker: 'CLEAR',
       fee: 0,
       observation: '',
+      realizedProfit: null,
     });
+  });
+
+  it('traz o lucro realizado das vendas e ignora o campo nas compras', () => {
+    expect(toTransaction({ ...dto, type: 'SELL', lucroRealizado: '-120.50' }).realizedProfit).toBe(-120.5);
+    expect(toTransaction({ ...dto, type: 'SELL', lucroRealizado: 350 }).realizedProfit).toBe(350);
+    expect(toTransaction({ ...dto, type: 'BUY', lucroRealizado: null }).realizedProfit).toBeNull();
   });
 
   it('usa a classe devolvida pela API, sem inferir pelo ticker', () => {

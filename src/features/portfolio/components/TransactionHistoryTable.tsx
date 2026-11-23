@@ -18,7 +18,18 @@ import { ContributionForm } from '@/features/portfolio/components/ContributionFo
 import { useDeleteTransaction } from '@/features/portfolio/hooks/useDeleteTransaction';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { Transaction } from '@/features/portfolio/types';
+import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/utils';
+
+/** Verde para lucro, vermelho para prejuízo; "—" nas compras. */
+function RealizedProfit({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span className={cn('font-medium', value >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+      {formatCurrency(value)}
+    </span>
+  );
+}
 
 const EDIT_FORM_ID = 'edit-transaction-form';
 
@@ -55,6 +66,7 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
               <TableHead className="text-right">Preço unitário</TableHead>
               <TableHead className="text-right">Taxas</TableHead>
               <TableHead className="text-right">Valor total</TableHead>
+              <TableHead className="text-right">Lucro realizado</TableHead>
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
@@ -85,6 +97,9 @@ export function TransactionHistoryTable({ transactions }: TransactionHistoryTabl
                   <TableCell className="text-right">{formatCurrency(transaction.pricePaid)}</TableCell>
                   <TableCell className="text-right text-muted-foreground">{formatCurrency(transaction.fee)}</TableCell>
                   <TableCell className="text-right font-medium">{formatCurrency(totalValue)}</TableCell>
+                  <TableCell className="text-right whitespace-nowrap">
+                    <RealizedProfit value={transaction.realizedProfit} />
+                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
                       <button

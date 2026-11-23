@@ -22,6 +22,8 @@ export interface TransactionDto {
   broker?: string | null;
   fee?: number | string | null;
   observation?: string | null;
+  /** Só nas vendas; `null` nas compras. */
+  lucroRealizado?: number | string | null;
 }
 
 /** Corpo aceito pela API em POST e PUT (sem `id`). */
@@ -52,6 +54,10 @@ export function toTransaction(dto: TransactionDto): Transaction {
     broker: dto.broker ?? '',
     fee: Number(dto.fee ?? 0),
     observation: dto.observation ?? '',
+    realizedProfit:
+      dto.type === 'SELL' && dto.lucroRealizado != null && Number.isFinite(Number(dto.lucroRealizado))
+        ? Number(dto.lucroRealizado)
+        : null,
   };
 }
 

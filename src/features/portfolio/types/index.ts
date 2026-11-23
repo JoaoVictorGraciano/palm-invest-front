@@ -49,6 +49,11 @@ export interface Transaction {
   fee: number;
   /** Observação livre; string vazia quando não informada. */
   observation: string;
+  /**
+   * Lucro (ou prejuízo, se negativo) realizado numa venda, calculado pela API:
+   * valor da venda menos a taxa, menos quantidade × custo médio. `null` nas compras.
+   */
+  realizedProfit: number | null;
 }
 
 /** Dados de entrada para criar ou editar uma transação (o formulário coleta estes campos). */
