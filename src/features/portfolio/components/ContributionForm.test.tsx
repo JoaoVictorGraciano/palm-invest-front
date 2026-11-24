@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContributionForm } from '@/features/portfolio/components/ContributionForm';
 
 const FORM_ID = 'form-de-teste';
@@ -23,6 +23,8 @@ interface ApiReplies {
   searchReply?: () => Response;
   /** Cotação atual de PETR4 na API; `null` simula PETR4 em `failures`. */
   petr4Quote?: number | null;
+  /** Vendido no mês (`AAAA-MM`) em ações e cripto, como `GET /api/resultados/limite-isencao` devolve. */
+  limites?: Record<string, { acoes: number; cripto: number }>;
 }
 
 interface SearchableAsset {
@@ -82,6 +84,7 @@ function stubNetwork({
   failedProviders = [],
   searchReply,
   petr4Quote = 32,
+  limites = {},
 }: ApiReplies = {}) {
   const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
@@ -100,6 +103,17 @@ function stubNetwork({
           .filter((symbol) => typeof prices[symbol] !== 'number')
           .map((symbol) => ({ symbol, provider: 'brapi', mensagem: 'Cotação indisponível' })),
       });
+    }
+    if (url.startsWith('http://api.test/api/resultados/limite-isencao')) {
+      const mes = new URL(url).searchParams.get('mes') ?? '';
+      const vendido = limites[mes] ?? { acoes: 0, cripto: 0 };
+      const parte = (limite: number, valor: number) => ({
+        limite,
+        vendido: valor,
+        disponivel: Math.max(0, limite - valor),
+        dentroDoLimite: valor <= limite,
+      });
+      return jsonResponse({ mes, acoes: parte(20000, vendido.acoes), cripto: parte(35000, vendido.cripto) });
     }
     if (url === 'http://api.test/api/transactions' && init?.method === 'POST') {
       return (create ?? (() => jsonResponse({ id: 1, ...JSON.parse(String(init.body)) }, 201)))();
@@ -591,5 +605,122 @@ describe('ContributionForm: ticker validado pela busca', () => {
 
     expect(await screen.findByText('Escolha um ativo na lista de sugestões.')).toBeInTheDocument();
     expect(postCalls(fetchMock)).toHaveLength(0);
+  });
+});
+
+describe('ContributionForm: limite de isenção na venda', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(2026, 10, 23, 12));
+  });
+
+  /** Posição grande o bastante para as vendas dos testes. */
+  function bigPosition(assetSymbol: 'PETR4' | 'BTC', assetClass: 'STOCK' | 'CRYPTO') {
+    return { ...ownedBuy(assetSymbol, assetClass), quantity: 1000 };
+  }
+
+  async function fillSale(user: ReturnType<typeof userEvent.setup>, search: string, ticker: RegExp, quantity: string, price: string) {
+    await user.click(screen.getByRole('radio', { name: 'Venda' }));
+    await user.type(screen.getByLabelText('Ativo'), search);
+    await user.click(await screen.findByRole('option', { name: ticker }));
+    await user.type(screen.getByLabelText('Corretora / Exchange'), 'clear');
+    await user.type(screen.getByLabelText('Qtd vendida'), quantity);
+    await user.type(screen.getByLabelText('Preço por unidade'), price);
+  }
+
+  function limitCalls(fetchMock: ReturnType<typeof stubNetwork>) {
+    return fetchMock.mock.calls
+      .map(([input]) => new URL(String(input)))
+      .filter((url) => url.pathname === '/api/resultados/limite-isencao');
+  }
+
+  it('venda de ação que passa de R$ 20 mil no mês: avisa e só salva depois da confirmação', async () => {
+    const fetchMock = stubNetwork({
+      transactions: [bigPosition('PETR4', 'STOCK')],
+      limites: { '2026-11': { acoes: 19000, cripto: 0 } },
+    });
+    const { user, onSuccess } = renderForm();
+
+    await fillSale(user, 'petr', /PETR4/, '100', '32');
+
+    const message =
+      'Com esta venda, suas vendas de ações em novembro chegam a R$ 22.200,00, acima de R$ 20 mil: o lucro do mês fica tributável.';
+    await waitFor(() =>
+      expect(screen.getByRole('status', { name: '' }).textContent?.replace(/\s/g, ' ')).toBe(message),
+    );
+    expect(limitCalls(fetchMock).at(-1)?.searchParams.get('mes')).toBe('2026-11');
+
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Vendas acima do limite de isenção');
+    expect(dialog.textContent?.replace(/\s/g, ' ')).toContain(message);
+    expect(postCalls(fetchMock)).toHaveLength(0);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar mesmo assim' }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('venda que fica dentro do limite (o próprio limite ainda é isento) salva direto, sem aviso', async () => {
+    const fetchMock = stubNetwork({
+      transactions: [bigPosition('PETR4', 'STOCK')],
+      limites: { '2026-11': { acoes: 16800, cripto: 0 } },
+    });
+    const { user, onSuccess } = renderForm();
+
+    // 16.800 + 100 × 32 = 20.000: exatamente o limite.
+    await fillSale(user, 'petr', /PETR4/, '100', '32');
+    await waitFor(() => expect(limitCalls(fetchMock).length).toBeGreaterThan(0));
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.queryByText(/acima de R\$ 20 mil/)).not.toBeInTheDocument();
+  });
+
+  it('com o mês já acima do limite, só informa e salva direto', async () => {
+    const fetchMock = stubNetwork({
+      transactions: [bigPosition('PETR4', 'STOCK')],
+      limites: { '2026-11': { acoes: 25000, cripto: 0 } },
+    });
+    const { user, onSuccess } = renderForm();
+
+    await fillSale(user, 'petr', /PETR4/, '10', '32');
+    expect(
+      (await screen.findByText(/já passaram de R\$ 20 mil/)).textContent?.replace(/\s/g, ' '),
+    ).toBe(
+      'Suas vendas de ações em novembro já passaram de R$ 20 mil (R$ 25.000,00 antes desta venda): o lucro do mês já é tributável.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+    expect(postCalls(fetchMock)).toHaveLength(1);
+  });
+
+  it('venda de cripto que passa de R$ 35 mil no mês também avisa', async () => {
+    stubNetwork({
+      transactions: [bigPosition('BTC', 'CRYPTO')],
+      limites: { '2026-11': { acoes: 0, cripto: 34000 } },
+    });
+    const { user } = renderForm();
+
+    await fillSale(user, 'btc', /BTC/, '100', '33');
+
+    expect(
+      (await screen.findByText(/Com esta venda/)).textContent?.replace(/\s/g, ' '),
+    ).toBe(
+      'Com esta venda, suas vendas de cripto em novembro chegam a R$ 37.300,00, acima de R$ 35 mil: o lucro do mês fica tributável.',
+    );
+  });
+
+  it('compras não consultam o limite de isenção', async () => {
+    const fetchMock = stubNetwork({ limites: { '2026-11': { acoes: 19999, cripto: 0 } } });
+    const { user } = renderForm();
+
+    await choosePetr4(user);
+    await fillRest(user, '32');
+
+    expect(screen.queryByText(/Com esta venda/)).not.toBeInTheDocument();
+    expect(limitCalls(fetchMock)).toHaveLength(0);
   });
 });

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { HttpError } from '@/services';
 import { TRANSACTIONS_QUERY_KEY } from '@/features/portfolio/hooks/useTransactions';
+import { RESULTADOS_QUERY_KEY } from '@/features/impostos/hooks/useResultados';
 import { createTransaction, updateTransaction } from '@/features/portfolio/services/transactions.api';
 import { TRANSACTION_TYPE } from '@/features/portfolio/types';
 import type { TransactionInput } from '@/features/portfolio/types';
@@ -29,7 +30,10 @@ export function useSaveTransaction() {
     mutationFn: ({ id, input }: SaveTransactionVariables) =>
       id === undefined ? createTransaction(input) : updateTransaction(id, input),
     onSuccess: async (_transaction, { id, input }) => {
-      await queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEY });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: TRANSACTIONS_QUERY_KEY }),
+        queryClient.invalidateQueries({ queryKey: RESULTADOS_QUERY_KEY }),
+      ]);
 
       const kind = input.type === TRANSACTION_TYPE.SELL ? 'Venda' : 'Compra';
       toast.success(id === undefined ? `${kind} registrada` : 'Transação atualizada', {

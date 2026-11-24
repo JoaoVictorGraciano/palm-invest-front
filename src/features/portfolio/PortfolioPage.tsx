@@ -7,12 +7,14 @@ import { PortfolioSkeleton } from '@/features/portfolio/components/PortfolioSkel
 import { PortfolioSummaryCards } from '@/features/portfolio/components/PortfolioSummaryCards';
 import { PortfolioCharts } from '@/features/portfolio/components/PortfolioCharts'; // 🚀 IMPORTAMOS SEU NOVO GRÁFICO AQUI!
 import { usePortfolio } from '@/features/portfolio/hooks/usePortfolio';
+import { useRealizedProfitByTicker } from '@/features/portfolio/hooks/useRealizedProfitByTicker';
 import type { AssetFilter } from '@/features/portfolio/types';
 import { useProventosByTicker } from '@/features/proventos/hooks/useProventosByTicker';
 
 export function PortfolioPage() {
   const { portfolio, isLoading, isError, isFetching, refetch } = usePortfolio();
   const incomeByTicker = useProventosByTicker();
+  const realizedByTicker = useRealizedProfitByTicker();
   const [filter, setFilter] = useState<AssetFilter>('ALL');
 
   const filteredAssets = useMemo(() => {
@@ -47,14 +49,18 @@ export function PortfolioPage() {
 
       {portfolio && !isLoading && (
         <>
-          <PortfolioSummaryCards portfolio={portfolio} incomeByTicker={incomeByTicker} />
+          <PortfolioSummaryCards
+            portfolio={portfolio}
+            realizedByTicker={realizedByTicker}
+            incomeByTicker={incomeByTicker}
+          />
           
           {/* 🚀 E COLOCAMOS ELE NA TELA AQUI: */}
           <PortfolioCharts portfolio={portfolio} />
           
           <div className="flex flex-col gap-4">
             <AssetClassFilter value={filter} onChange={setFilter} />
-            <AssetTable assets={filteredAssets} incomeByTicker={incomeByTicker} />
+            <AssetTable assets={filteredAssets} realizedByTicker={realizedByTicker} incomeByTicker={incomeByTicker} />
           </div>
         </>
       )}

@@ -17,6 +17,7 @@ function transaction(overrides: Partial<Transaction>): Transaction {
     broker: '',
     fee: 0,
     observation: '',
+    realizedProfit: null,
     ...overrides,
   };
 }

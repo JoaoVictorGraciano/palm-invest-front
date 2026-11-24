@@ -1,10 +1,12 @@
 import type { Portfolio } from '@/types';
 import { cn } from '@/lib/utils';
-import { calculateTotalReturn, formatCurrency, formatPercentage, sumIncomeOfAssets } from '@/utils';
+import { calculateTotalResult, formatCurrency, formatPercentage, sumByTicker } from '@/utils';
 
 interface PortfolioSummaryCardsProps {
   portfolio: Portfolio;
-  /** Proventos líquidos recebidos por ticker; `undefined` enquanto carregam ou se falharem. */
+  /** Lucro realizado nas vendas, por ticker (todos os ativos, inclusive os já vendidos por inteiro). */
+  realizedByTicker?: ReadonlyMap<string, number>;
+  /** Proventos líquidos recebidos por ticker (todos os ativos); `undefined` enquanto carregam ou se falharem. */
   incomeByTicker?: ReadonlyMap<string, number>;
 }
 
@@ -12,47 +14,48 @@ function resultColor(value: number) {
   return value >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400';
 }
 
-export function PortfolioSummaryCards({ portfolio, incomeByTicker }: PortfolioSummaryCardsProps) {
-  const income = incomeByTicker ? sumIncomeOfAssets(portfolio.assets, incomeByTicker) : undefined;
-  const result = calculateTotalReturn(portfolio.totalInvested, portfolio.profit, income ?? 0);
+export function PortfolioSummaryCards({ portfolio, realizedByTicker, incomeByTicker }: PortfolioSummaryCardsProps) {
+  const realized = realizedByTicker ? sumByTicker(realizedByTicker) : undefined;
+  const income = incomeByTicker ? sumByTicker(incomeByTicker) : undefined;
+  const complete = realized !== undefined && income !== undefined;
+  const result = calculateTotalResult(realized ?? 0, portfolio.profit, income ?? 0);
 
   const cards = [
-    { label: 'Investido', value: formatCurrency(portfolio.totalInvested) },
-    { label: 'Valor atual', value: formatCurrency(portfolio.currentValue) },
+    { label: 'Investido', value: formatCurrency(portfolio.totalInvested), detail: 'Custo das posições atuais' },
+    { label: 'Valor atual', value: formatCurrency(portfolio.currentValue), detail: 'Pela cotação atual' },
     {
-      label: 'Valorização',
-      value: formatCurrency(result.appreciation),
-      detail: `${formatPercentage(result.appreciationPercentage)} sobre o investido`,
-      colorClass: resultColor(result.appreciation),
+      label: 'Lucro em aberto',
+      value: formatCurrency(result.open),
+      detail: `${formatPercentage(portfolio.profitPercentage)} · valorização do que você tem`,
+      colorClass: resultColor(result.open),
     },
     {
-      label: 'Proventos recebidos',
+      label: 'Lucro realizado',
+      value: realized === undefined ? '—' : formatCurrency(realized),
+      detail: 'Nas vendas já feitas',
+      colorClass: realized === undefined ? undefined : resultColor(realized),
+    },
+    {
+      label: 'Proventos',
       value: income === undefined ? '—' : formatCurrency(income),
-      detail: income === undefined ? 'Indisponível no momento' : `${formatPercentage(result.incomePercentage)} sobre o investido`,
+      detail: income === undefined ? 'Indisponível no momento' : 'Líquidos recebidos',
       colorClass: income === undefined ? undefined : 'text-emerald-600 dark:text-emerald-400',
     },
     {
-      label: 'Resultado com proventos',
-      value: income === undefined ? '—' : formatCurrency(result.total),
-      detail:
-        income === undefined
-          ? 'Valorização + proventos'
-          : `${formatPercentage(result.totalPercentage)} = valorização + proventos`,
-      colorClass: income === undefined ? undefined : resultColor(result.total),
-      wide: true,
+      label: 'Resultado total',
+      value: complete ? formatCurrency(result.total) : '—',
+      detail: 'Realizado + em aberto + proventos',
+      colorClass: complete ? resultColor(result.total) : undefined,
     },
   ];
 
   return (
-    <dl className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+    <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
       {cards.map((card) => (
-        <div
-          key={card.label}
-          className={cn('rounded-lg border bg-card p-4 text-card-foreground', card.wide && 'col-span-2 lg:col-span-1')}
-        >
+        <div key={card.label} className="rounded-lg border bg-card p-4 text-card-foreground">
           <dt className="text-sm text-muted-foreground">{card.label}</dt>
           <dd className={cn('text-lg font-semibold tabular-nums', card.colorClass)}>{card.value}</dd>
-          {card.detail && <dd className="text-xs text-muted-foreground">{card.detail}</dd>}
+          <dd className="text-xs text-muted-foreground">{card.detail}</dd>
         </div>
       ))}
     </dl>

@@ -45,14 +45,15 @@ describe('MainLayout', () => {
     expect(new Headers(init?.headers).get('Authorization')).toBe('Bearer token-ficticio');
   });
 
-  it('mostra Proventos no menu, entre Carteira e Histórico', () => {
+  it('mostra Proventos e Impostos no menu, entre Carteira e Histórico', () => {
     vi.stubGlobal('fetch', vi.fn<typeof fetch>(async () => new Response(null, { status: 500 })));
 
     renderLayout();
 
     const links = within(screen.getByRole('navigation')).getAllByRole('link').map((link) => link.textContent);
-    expect(links).toEqual(['Início', 'Carteira', 'Proventos', 'Histórico']);
+    expect(links).toEqual(['Início', 'Carteira', 'Proventos', 'Impostos', 'Histórico']);
     expect(screen.getByRole('link', { name: 'Proventos' })).toHaveAttribute('href', '/proventos');
+    expect(screen.getByRole('link', { name: 'Impostos' })).toHaveAttribute('href', '/impostos');
   });
 
   it('mostra no rodapé a atribuição da CoinGecko, com link para coingecko.com', () => {
